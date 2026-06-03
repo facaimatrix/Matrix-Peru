@@ -14,4 +14,3 @@ src-tauri/target/
 # Keep release package only
 !release/
 !release/**
-release/*
