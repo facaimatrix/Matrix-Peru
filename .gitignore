@@ -1,0 +1,16 @@
+# Ignore source and development files
+.vscode/
+.venv/
+src/
+src-tauri/
+convert_models.R
+*.log
+*.tmp
+node_modules/
+
+# Ignore build outputs
+src-tauri/target/
+
+# Keep release package only
+!release/
+release/*
