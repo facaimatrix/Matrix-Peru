@@ -1,6 +1,6 @@
 # MatrixPro Peru Release
 
-This folder contains the final built installers for MatrixPro Peru version 1.0.0.
+This folder contains the final built installers for MatrixPro Peru version 1.0.1.
 
 ## Included files
 
