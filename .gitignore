@@ -1,8 +1,8 @@
-# Ignore source and development files
+# Ignore development files
+src-tauri/rustup-init.exe
+src-tauri/vs_BuildTools.exe
 .vscode/
 .venv/
-src/
-src-tauri/
 convert_models.R
 *.log
 *.tmp

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MatrixPro Peru</title>
+
+    <!-- Leaflet + Chart.js. For fully offline use, download these into
+       src/vendor/ and point the src/href at the local copies. -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+
+    <!-- Optional: set your Mapbox token here (leave blank if not using Mapbox) -->
+    <meta name="mapbox-token" content="" />
+
+    <script>
+      // Expose token to app.js via window.MAPBOX_TOKEN (empty -> null)
+      (function () {
+        const m = document.querySelector('meta[name="mapbox-token"]');
+        window.MAPBOX_TOKEN =
+          m && m.content && m.content.trim() ? m.content.trim() : null;
+      })();
+    </script>
+
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Title bar -->
+    <div class="title-bar">
+      <div class="title-brand">
+        <div class="title-logo">MP</div>
+        <div class="title-text-wrap">
+          <div class="title-name"><span>MatrixPro</span> Peru</div>
+          <div class="title-sub" data-i18n="title_sub">
+            Matrix Model Based Forest Growth Simulator
+          </div>
+        </div>
+      </div>
+      <div class="title-right">
+        <div class="lang-switcher">
+          <button id="lang_es" class="lang-btn active">ES</button>
+          <button id="lang_en" class="lang-btn">EN</button>
+        </div>
+        <div class="title-badge">
+          <div class="title-dot"></div>
+          <span id="status_text">Cargando…</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-wrap">
+      <!-- Main tabs -->
+      <div class="tabs">
+        <div class="tab-btn active" data-tab="input" data-i18n="tab_input">
+          📥&nbsp; Parámetros de Entrada
+        </div>
+        <div class="tab-btn" data-tab="output" data-i18n="tab_output">📊&nbsp; Resultados</div>
+      </div>
+
+      <div class="tab-content">
+        <!-- ============================ INPUT TAB ============================ -->
+        <div id="tab-input">
+          <div class="row">
+            <!-- Left: location + map -->
+            <div class="col-4">
+              <div class="card card-accent-left">
+                <div class="sec-hdr">
+                  <span class="hdr-icon">🌍</span><span data-i18n="sec_location"> Coordenadas de Ubicación</span>
+                </div>
+                <div class="map-hint" data-i18n="map_hint">
+                  📍 Ingrese manualmente o haga clic en el mapa — el clic completa ambos campos
+                </div>
+                <div class="row">
+                  <div class="col-6">
+                    <label class="fld" data-i18n="lbl_lat">Latitud (°)</label>
+                    <input
+                      type="number"
+                      id="lat"
+                      step="0.0001"
+                      min="-18.35"
+                      max="-0.03"
+                    />
+                  </div>
+                  <div class="col-6">
+                    <label class="fld" data-i18n="lbl_lon">Longitud (°)</label>
+                    <input
+                      type="number"
+                      id="lon"
+                      step="0.0001"
+                      min="-81.33"
+                      max="-68.65"
+                    />
+                  </div>
+                </div>
+                <div id="dept_badge"></div>
+                <div id="coord_val_msg"></div>
+                <div id="forest_warn_msg"></div>
+              </div>
+
+              <div class="card" style="padding: 12px">
+                <div class="sec-hdr">
+                  <span class="hdr-icon">🗺</span><span data-i18n="sec_map"> Perú — Haga clic en el mapa para seleccionar ubicación</span>
+                </div>
+                <div id="map"></div>
+              </div>
+            </div>
+
+            <!-- Right: stand tables + params + buttons -->
+            <div class="col-8">
+              <div class="card card-accent-left">
+                <div class="sec-hdr">
+                  <span class="hdr-icon">🌲</span><span data-i18n="sec_stand"> Estado del Rodal</span>
+                </div>
+                <div class="row">
+                  <!-- Initial -->
+                  <div class="col-6">
+                    <div class="stand-label stand-label-init" data-i18n="stand_init">
+                      🌱 Estado Inicial del Rodal
+                    </div>
+                    <div class="toggle-grp">
+                      <button id="init_opt_manual" data-mode="manual" data-i18n="btn_manual">
+                        ✏ Ingresar Manualmente
+                      </button>
+                      <button id="init_opt_autofill" data-mode="autofill" data-i18n="btn_autofill">
+                        📍 Autocompletar desde Mapa
+                      </button>
+                    </div>
+                    <div class="stand-table-wrap">
+                      <table class="stand-table init">
+                        <thead>
+                          <tr>
+                            <th data-i18n="th_dbh">Clase DAP (cm)</th>
+                            <th data-i18n="th_tph_input">Árboles / Hectárea</th>
+                          </tr>
+                        </thead>
+                        <tbody id="init_tbody"></tbody>
+                      </table>
+                    </div>
+                    <div id="autofill_msg"></div>
+                  </div>
+                  <!-- Target -->
+                  <div class="col-6">
+                    <div class="stand-label stand-label-tgt" data-i18n="stand_tgt">
+                      🎯 Estado Objetivo del Rodal
+                    </div>
+                    <div class="toggle-grp toggle-grp-green">
+                      <button id="tgt_opt_manual" data-mode="manual" data-i18n="btn_manual">
+                        ✏ Ingresar Manualmente
+                      </button>
+                      <button id="tgt_opt_copy" data-mode="copy" data-i18n="btn_copy">
+                        = Igual al Inicial
+                      </button>
+                    </div>
+                    <div class="stand-table-wrap">
+                      <table class="stand-table tgt">
+                        <thead>
+                          <tr>
+                            <th data-i18n="th_dbh">Clase DAP (cm)</th>
+                            <th data-i18n="th_tph_input">Árboles / Hectárea</th>
+                          </tr>
+                        </thead>
+                        <tbody id="tgt_tbody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card card-accent-purple">
+                <div class="sec-hdr">
+                  <span class="hdr-icon">⚙️</span><span data-i18n="sec_params"> Parámetros de Simulación</span>
+                </div>
+                <div class="sim-grid">
+                  <div class="sim-param-box">
+                    <label class="fld" data-i18n="lbl_sim_length">Duración de Simulación (años)</label>
+                    <input
+                      type="number"
+                      id="sim_length"
+                      value="50"
+                      min="1"
+                      max="500"
+                      step="1"
+                    />
+                  </div>
+                  <div class="sim-param-box">
+                    <label class="fld" data-i18n="lbl_first_harvest">Año de Primera Cosecha</label>
+                    <input
+                      type="number"
+                      id="first_harvest"
+                      value="1"
+                      min="1"
+                      max="500"
+                      step="1"
+                    />
+                  </div>
+                  <div class="sim-param-box">
+                    <label class="fld" data-i18n="lbl_cutting_cycle">Ciclo de Corta (años)</label>
+                    <input
+                      type="number"
+                      id="cutting_cycle"
+                      value="5"
+                      min="1"
+                      max="200"
+                      step="1"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 10px; margin-top: 10px">
+                <button id="run_btn" class="btn-run" data-i18n="btn_run" style="flex: 2">
+                  ▶&nbsp; Ejecutar Simulación
+                </button>
+                <button
+                  id="get_input_data"
+                  class="btn-get-data"
+                  data-i18n="btn_get_data"
+                  style="flex: 1"
+                >
+                  ⬇&nbsp; Obtener Datos
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================ OUTPUT TAB ============================ -->
+        <div id="tab-output" class="hidden">
+          <div class="subtabs">
+            <div class="subtab-btn active" data-sub="tph" data-i18n="sub_tph">
+              🌳 Árboles por Hectárea
+            </div>
+            <div class="subtab-btn" data-sub="ba" data-i18n="sub_ba">📐 Área Basal</div>
+            <div class="subtab-btn" data-sub="agb" data-i18n="sub_agb">🌿 Biomasa</div>
+            <div class="subtab-btn" data-sub="div" data-i18n="sub_div">📊 Índices de Diversidad</div>
+          </div>
+          <div id="sub-tph"></div>
+          <div id="sub-ba" class="hidden"></div>
+          <div id="sub-agb" class="hidden"></div>
+          <div id="sub-div" class="hidden"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
