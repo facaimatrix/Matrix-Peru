@@ -122,13 +122,9 @@ strong { color: var(--text-primary); font-weight: 600; }
 .title-brand { display: flex; align-items: center; gap: 14px; }
 
 .title-logo {
-  width: 40px; height: 40px;
-  border-radius: var(--r-sm);
-  background: linear-gradient(135deg, var(--bg-panel) 0%, var(--bg-elevated) 100%);
-  border: 1px solid var(--gold);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 17px; font-weight: 900; color: var(--gold);
-  box-shadow: 0 0 12px rgba(209,172,0,0.2), var(--shadow-sm);
+  height: 60px;
+  width: auto;
+  object-fit: contain;
   flex-shrink: 0;
 }
 

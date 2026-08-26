@@ -28,7 +28,7 @@
     "targets": "all",
     "resources": ["data/*"],
     "icon": [
-      "icons/icon.ico",
+      "icons/logo-icon.ico",
       "icons/96x96.png"
     ]
   }
