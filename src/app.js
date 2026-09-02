@@ -50,6 +50,17 @@ const T = {
     s2_label: "Índice de Simpson S2 (D)", s2_y: "Simpson D",
     th_s1: "Shannon S1 (H')", th_s2: "Simpson S2 (D)",
     btn_dl: "⬇ Descargar CSV",
+    logo_alt: "Logo de MatrixPro Peru",
+    map_osm: "OpenStreetMap", map_satellite: "Satélite (Esri)",
+    country: "Perú",
+    err_load_data: (err) =>
+      `No se pudieron cargar los archivos de datos:\n\n${err}\n\nAsegúrese de que perudata.csv y los tres archivos model_*.json estén en src-tauri/data/.`,
+    csv_year: "Año", csv_total_tph: "TPH_Total", csv_harv_prefix: "Cosecha_",
+    csv_total_harvested: "Total_Cosechado", csv_harvest_year: "Año_Cosecha",
+    csv_total_ba: "AB_Total_m2ha", csv_total_agb: "BAS_Total_Mgha",
+    csv_shannon: "Shannon_S1", csv_simpson: "Simpson_S2",
+    csv_file_tph: "tph_resultados", csv_file_ba: "ab_resultados",
+    csv_file_agb: "bas_resultados", csv_file_div: "diversidad_resultados",
   },
   en: {
     title_sub: "Matrix Model Based Forest Growth Simulator",
@@ -96,19 +107,102 @@ const T = {
     s2_label: "Simpson Index S2 (D)", s2_y: "Simpson D",
     th_s1: "Shannon S1 (H')", th_s2: "Simpson S2 (D)",
     btn_dl: "⬇ Download CSV",
+    logo_alt: "MatrixPro Peru logo",
+    map_osm: "OpenStreetMap", map_satellite: "Satellite (Esri)",
+    country: "Peru",
+    err_load_data: (err) =>
+      `Could not load data files:\n\n${err}\n\nMake sure perudata.csv and the three model_*.json files are in src-tauri/data/.`,
+    csv_year: "Year", csv_total_tph: "Total_TPH", csv_harv_prefix: "Harv_",
+    csv_total_harvested: "Total_Harvested", csv_harvest_year: "Harvest_Year",
+    csv_total_ba: "Total_BA_m2ha", csv_total_agb: "Total_AGB_Mgha",
+    csv_shannon: "Shannon_S1", csv_simpson: "Simpson_S2",
+    csv_file_tph: "tph_results", csv_file_ba: "ba_results",
+    csv_file_agb: "agb_results", csv_file_div: "diversity_results",
   }
 };
 
 let LANG = localStorage.getItem("mp_lang") || "es";
 const t = (key) => T[LANG][key] || key;
 
+// Map English backend error strings (Rust) to the active UI language.
+function translateErr(err) {
+  const s = String(err);
+  const rules = [
+    [/^Data not loaded yet$/, () => LANG === "es" ? "Los datos aún no se han cargado" : s],
+    [/^No valid LAT\/LON rows in perudata\.csv$/, () => LANG === "es" ? "No hay filas válidas de LAT/LON en perudata.csv" : s],
+    [/^Matched plot has no GEC value$/, () => LANG === "es" ? "La parcela coincidente no tiene valor GEC" : s],
+    [/^Model requires 'D' but none was supplied$/, () => LANG === "es" ? "El modelo requiere 'D' pero no se proporcionó ninguno" : s],
+    [/^Could not find '(.+)'\. Place it in src-tauri\/data\/ \(or next to the app\)\.$/,
+      (m) => LANG === "es"
+        ? `No se encontró '${m[1]}'. Colóquelo en src-tauri/data/ (o junto a la aplicación).`
+        : s],
+    [/^Cannot open perudata\.csv: (.+)$/,
+      (m) => LANG === "es" ? `No se puede abrir perudata.csv: ${m[1]}` : s],
+    [/^Cannot read CSV header: (.+)$/,
+      (m) => LANG === "es" ? `No se puede leer el encabezado del CSV: ${m[1]}` : s],
+    [/^perudata\.csv has no latitude column \(looked for LAT\/Latitude\/lat\/Y\)\. \s*Columns present: (.+)$/,
+      (m) => LANG === "es"
+        ? `perudata.csv no tiene columna de latitud (se buscó LAT/Latitude/lat/Y). Columnas presentes: ${m[1]}`
+        : s],
+    [/^perudata\.csv has no longitude column \(looked for LON\/Longitude\/lon\/lng\/X\)\. \s*Columns present: (.+)$/,
+      (m) => LANG === "es"
+        ? `perudata.csv no tiene columna de longitud (se buscó LON/Longitude/lon/lng/X). Columnas presentes: ${m[1]}`
+        : s],
+    [/^Cannot read model '(.+)': (.+)$/,
+      (m) => LANG === "es" ? `No se puede leer el modelo '${m[1]}': ${m[2]}` : s],
+    [/^Cannot parse model '(.+)': (.+)$/,
+      (m) => LANG === "es" ? `No se puede interpretar el modelo '${m[1]}': ${m[2]}` : s],
+    [/^Model '(.+)' contains no trees$/,
+      (m) => LANG === "es" ? `El modelo '${m[1]}' no contiene árboles` : s],
+    [/^GEC '(.+)' not found\. Available: (.+)$/,
+      (m) => LANG === "es" ? `GEC '${m[1]}' no encontrado. Disponibles: ${m[2]}` : s],
+    [/^Covariate '(.+)' is required by a model but was not found \(or not numeric\) in the matched perudata row\.$/,
+      (m) => LANG === "es"
+        ? `La covariable '${m[1]}' es requerida por un modelo pero no se encontró (o no es numérica) en la fila coincidente de perudata.`
+        : s],
+    [/^Invalid save path: (.+)$/,
+      (m) => LANG === "es" ? `Ruta de guardado no válida: ${m[1]}` : s],
+    [/^Write failed: (.+)$/,
+      (m) => LANG === "es" ? `Error al escribir: ${m[1]}` : s],
+  ];
+  for (const [re, fn] of rules) {
+    const m = s.match(re);
+    if (m) return fn(m);
+  }
+  return s;
+}
+
+function showSimError(err) {
+  LAST_SIM_ERR = err;
+  document.getElementById("sub-tph").innerHTML =
+    `<div class="card card-accent-red" style="border-left:3px solid #f87171;">
+       <div class="sec-hdr" style="color:#f87171;">${t("err_sim")}</div>
+       <div class="sim-error-box">${translateErr(err)}</div></div>`;
+}
+
+async function setWindowTitle() {
+  const title = "MatrixPro Peru — " + t("title_sub");
+  document.title = title;
+  try {
+    const tw = window.__TAURI__ && (window.__TAURI__.webviewWindow || window.__TAURI__.window);
+    if (tw) {
+      const get = tw.getCurrentWebviewWindow || tw.getCurrentWindow;
+      if (get) await get().setTitle(title);
+    }
+  } catch (_) { /* native title stays at the config default */ }
+}
+
 let APP_STATUS = "loading", APP_PLOTS = 0;
 
 function applyLang() {
+  document.documentElement.lang = LANG;
   document.querySelectorAll("[data-i18n]").forEach(el => {
     const val = T[LANG][el.dataset.i18n];
     if (val !== undefined) el.innerHTML = val;
   });
+  const logo = document.querySelector(".title-logo");
+  if (logo) logo.alt = t("logo_alt");
+  setWindowTitle();
   // status text
   const st = document.getElementById("status_text");
   if (APP_STATUS === "ready") st.textContent = T[LANG].ready(APP_PLOTS);
@@ -117,8 +211,10 @@ function applyLang() {
   // lang button active states
   document.getElementById("lang_es").classList.toggle("active", LANG === "es");
   document.getElementById("lang_en").classList.toggle("active", LANG === "en");
+  refreshLayerControl();
   // re-render output if a simulation result exists
   if (SIM) renderAll();
+  else if (LAST_SIM_ERR) showSimError(LAST_SIM_ERR);
 }
 
 const DBH_CLASSES = ["10-15","15-20","20-25","25-30","30-35","35-40","40-45",
@@ -126,11 +222,14 @@ const DBH_CLASSES = ["10-15","15-20","20-25","25-30","30-35","35-40","40-45",
 const N_DBH = 13;
 
 let SIM = null;        // last SimResult
+let LAST_SIM_ERR = null;
 let NEAREST = null;    // last find_nearest result (for "Get Input Data")
 let depLayer = null;   // Leaflet GeoJSON layer
 let depFeatures = null;// raw GeoJSON features for point-in-polygon
 let marker = null;
 let IS_FOREST = true;  // tracks whether the current point is inside the forest mask
+let map = null;
+let osmLayer = null, imageryLayer = null, layerControl = null;
 
 // ── Build the 13-row stand-state input tables ──────────────────────────────
 function buildStandTables() {
@@ -311,7 +410,7 @@ function deptAt(lon, lat) {
   if (!depFeatures) return null;
   for (const f of depFeatures) {
     if (featureContainsPoint(f, lon, lat)) {
-      return f.properties && (f.properties.name || f.properties.NAME || f.properties.shapeName) || "Peru";
+      return f.properties && (f.properties.name || f.properties.NAME || f.properties.shapeName) || t("country");
     }
   }
   return null;
@@ -323,8 +422,16 @@ function updateDeptBadge(lat, lon) {
   el.innerHTML = d ? `<div class="dept-badge">📍 ${d}</div>` : "";
 }
 
-// ── Map ─────────────────────────────────────────────────────────────────────
-let map;
+function refreshLayerControl() {
+  if (!map || !osmLayer || !imageryLayer) return;
+  const selected = map.hasLayer(imageryLayer) ? imageryLayer : osmLayer;
+  if (layerControl) map.removeControl(layerControl);
+  const baseMaps = {};
+  baseMaps[t("map_osm")] = osmLayer;
+  baseMaps[t("map_satellite")] = imageryLayer;
+  layerControl = L.control.layers(baseMaps, null, { collapsed: false }).addTo(map);
+  if (!map.hasLayer(selected)) selected.addTo(map);
+}
 function initMap() {
   map = L.map("map", {
     zoomControl: true,
@@ -335,30 +442,20 @@ function initMap() {
   }).setView([-9.5, -75.0], 5);
 
   // Basemap layers
-  const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap contributors'
   });
-  const esriTerrain = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 13,
-    attribution: 'Tiles &copy; Esri'
-  });
-  const esriImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  imageryLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     maxZoom: 19,
     attribution: 'Imagery &copy; Esri'
   });
-  const baseMaps = {
-    "OpenStreetMap": osm,
-    "Satellite (Esri)": esriImagery
-  };
 
   // (Mapbox removed — only OpenStreetMap and Esri Satellite are available)
 
   // Default basemap
-  osm.addTo(map);
-
-  // Layer control (collapsed on small screens)
-  L.control.layers(baseMaps, null, { collapsed: false }).addTo(map);
+  osmLayer.addTo(map);
+  refreshLayerControl();
 
   // Optional department polygons (place peru_departments.geojson next to index.html)
   fetch("peru_departments.geojson").then(r => r.ok ? r.json() : null).then(gj => {
@@ -449,7 +546,7 @@ async function autofill() {
     for (let i = 0; i < N_DBH; i++) setInit(i + 1, r.dbh[i]);
     msg.innerHTML = `<div class="autofill-ok">${T[LANG].ok_autofill(r.dist_km)}</div>`;
   } catch (err) {
-    msg.innerHTML = `<div class="autofill-err">⚠ ${err}</div>`;
+    msg.innerHTML = `<div class="autofill-err">⚠ ${translateErr(err)}</div>`;
   }
 }
 
@@ -478,12 +575,10 @@ document.getElementById("run_btn").addEventListener("click", async () => {
   };
   try {
     SIM = await invoke("run_sim", { params });
+    LAST_SIM_ERR = null;
     renderAll();
   } catch (err) {
-    document.getElementById("sub-tph").innerHTML =
-      `<div class="card card-accent-red" style="border-left:3px solid #f87171;">
-         <div class="sec-hdr" style="color:#f87171;">${t("err_sim")}</div>
-         <div class="sim-error-box">${err}</div></div>`;
+    showSimError(err);
   }
 });
 
@@ -649,23 +744,23 @@ window.downloadCsv = function (which) {
   let rows, name;
 
   if (which === "tph") {
-    name = `tph_results_${stamp()}.csv`;
-    const head = ["Year", ...DBH_CLASSES.map(c => `TPH_${c}`), "Total_TPH",
-      ...DBH_CLASSES.map(c => `Harv_${c}`), "Total_Harvested", "Harvest_Year"];
+    name = `${t("csv_file_tph")}_${stamp()}.csv`;
+    const head = [t("csv_year"), ...DBH_CLASSES.map(c => `TPH_${c}`), t("csv_total_tph"),
+      ...DBH_CLASSES.map(c => `${t("csv_harv_prefix")}${c}`), t("csv_total_harvested"), t("csv_harvest_year")];
     rows = [head, ...years.map(y => [y,
       ...s.tph_mat[y].map(v => v.toFixed(4)), rowSum(s.tph_mat, y).toFixed(4),
       ...s.harv_mat[y].map(v => v.toFixed(4)), rowSum(s.harv_mat, y).toFixed(4), hflag(y)])];
   } else if (which === "ba") {
-    name = `ba_results_${stamp()}.csv`;
-    rows = [["Year", "Total_BA_m2ha", "Harvest_Year"],
+    name = `${t("csv_file_ba")}_${stamp()}.csv`;
+    rows = [[t("csv_year"), t("csv_total_ba"), t("csv_harvest_year")],
       ...years.map(y => [y, rowSum(s.ba_mat, y).toFixed(4), hflag(y)])];
   } else if (which === "agb") {
-    name = `agb_results_${stamp()}.csv`;
-    rows = [["Year", "Total_AGB_Mgha", "GEC", "Harvest_Year"],
+    name = `${t("csv_file_agb")}_${stamp()}.csv`;
+    rows = [[t("csv_year"), t("csv_total_agb"), "GEC", t("csv_harvest_year")],
       ...years.map(y => [y, rowSum(s.agb_mat, y).toFixed(4), s.gec, hflag(y)])];
   } else if (which === "div") {
-    name = `diversity_results_${stamp()}.csv`;
-    rows = [["Year", "Shannon_S1", "Simpson_S2", "Harvest_Year"],
+    name = `${t("csv_file_div")}_${stamp()}.csv`;
+    rows = [[t("csv_year"), t("csv_shannon"), t("csv_simpson"), t("csv_harvest_year")],
       ...years.map(y => [y, s.s1_vec[y].toFixed(6), s.s2_vec[y].toFixed(6), hflag(y)])];
   } else return;
 
@@ -708,8 +803,7 @@ async function start() {
   } catch (err) {
     APP_STATUS = "error";
     document.getElementById("status_text").textContent = t("data_error");
-    alert("Could not load data files:\n\n" + err +
-      "\n\nMake sure perudata.csv and the three model_*.json files are in src-tauri/data/.");
+    alert(T[LANG].err_load_data(translateErr(err)));
   }
 }
 window.addEventListener("DOMContentLoaded", start);
