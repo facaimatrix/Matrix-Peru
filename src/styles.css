@@ -777,3 +777,34 @@ canvas { max-height: 280px; }
 }
 
 .leaflet-popup-tip { background: var(--bg-surface) !important; }
+
+/* ── Stand View ──────────────────────────────────────────────── */
+#sv_canvas {
+  width: 100%; height: auto; max-height: none; display: block;
+  border-radius: var(--r-sm); border: 1px solid var(--border-subtle);
+  touch-action: none; cursor: grab;
+}
+#sv_canvas:active { cursor: grabbing; }
+#sv_canvas:focus-visible { outline: 2px solid var(--gold); }
+.sv-actions { margin-left: auto; display: flex; gap: 8px; }
+.sv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
+.sv-bar input[type='range'] { flex: 1; min-width: 180px; accent-color: var(--gold); }
+.sv-bar button {
+  background: var(--bg-elevated); color: var(--text-primary);
+  border: 1px solid var(--border-normal); border-radius: var(--r-xs);
+  padding: 5px 11px; font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: all var(--t-fast);
+}
+.sv-bar button:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+.sv-bar button.sv-play { background: var(--gold); border-color: var(--gold); color: #0C1618; min-width: 108px; }
+.sv-bar button.sv-play:hover { background: var(--gold-light); }
+.sv-bar button:disabled, .sv-actions button:disabled { opacity: 0.45; cursor: default; }
+.sv-opt, .sv-chk { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+.sv-opt select {
+  font-size: 12px; padding: 4px 6px; color: var(--text-primary);
+  background: var(--bg-input); border: 1px solid var(--border-normal); border-radius: var(--r-xs);
+}
+.sv-chk input { margin: 0; accent-color: var(--gold); }
+#sv_lbl { font-weight: 700; color: var(--gold); min-width: 64px; text-align: right; }
+.sv-status { font-size: 12px; color: var(--teal-light); min-height: 18px; margin-top: 8px; }
+.sv-note { font-size: 11px; color: var(--text-muted); line-height: 1.5; }

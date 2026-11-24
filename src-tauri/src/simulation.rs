@@ -115,6 +115,13 @@ pub struct SimResult {
     pub ba_mat: Vec<Vec<f64>>,
     pub agb_mat: Vec<Vec<f64>>,
     pub harv_mat: Vec<Vec<f64>>,
+    /// Annual flows behind tph_mat (trees/ha), used by the Stand View. Row m
+    /// is the step from year m-1 to year m; row 0 is all zeros. They close:
+    ///   tph[m][i] = tph[m-1][i] + up[m][i-1] (or rec[m] for i = 0)
+    ///               - up[m][i] - mort[m][i] - harv[m][i]
+    pub up_mat: Vec<Vec<f64>>,
+    pub mort_mat: Vec<Vec<f64>>,
+    pub rec_vec: Vec<f64>,
     pub s1_vec: Vec<f64>,
     pub s2_vec: Vec<f64>,
     pub init_v: Vec<f64>,
@@ -171,6 +178,9 @@ pub fn run_simulation(
     let mut ba_mat = vec![vec![0.0; N_DBH]; rows];
     let mut agb_mat = vec![vec![0.0; N_DBH]; rows];
     let mut harv_mat = vec![vec![0.0; N_DBH]; rows];
+    let mut up_mat = vec![vec![0.0; N_DBH]; rows];
+    let mut mort_mat = vec![vec![0.0; N_DBH]; rows];
+    let mut rec_vec = vec![0.0; rows];
     let mut s1_vec = vec![0.0; rows];
     let mut s2_vec = vec![0.0; rows];
 
@@ -213,7 +223,7 @@ pub fn run_simulation(
         for i in 0..N_DBH {
             let d = Some(DBH_VEC[i]);
             let uf = build_feats(rf_up, &dynv, d, cov)?;
-            up_r[i] = (rf_up.predict_one(&uf).max(0.0)) / 5.0; // 5-yr -> annual
+            up_r[i] = (rf_up.predict_one(&uf).max(0.0)) / 5.0; // cm/yr over 5 cm class width
             let mf = build_feats(rf_mt, &dynv, d, cov)?;
             mt_r[i] = rf_mt.predict_one(&mf).max(0.0);
         }
@@ -233,6 +243,21 @@ pub fn run_simulation(
         }
         if new_v.iter().sum::<f64>() == 0.0 {
             new_v[0] = 1.0;
+        }
+
+        // Record the flows (read-only: nothing below feeds back into new_v).
+        // Mortality is taken as the balancing term so that the budget closes
+        // even where new_v was clamped at zero or re-seeded.
+        rec_vec[m] = rc_p;
+        for i in 0..N_DBH {
+            let up = plt[i] * up_r[i];
+            let arriving = if i == 0 { rc_p } else { plt[i - 1] * up_r[i - 1] };
+            let mort = plt[i] + arriving - up - new_v[i];
+            up_mat[m][i] = up;
+            mort_mat[m][i] = mort.max(0.0);
+            if i == 0 && mort < 0.0 {
+                rec_vec[m] -= mort; // clamped or re-seeded smallest class
+            }
         }
 
         // Harvest down to target on harvest years.
@@ -257,6 +282,9 @@ pub fn run_simulation(
         ba_mat,
         agb_mat,
         harv_mat,
+        up_mat,
+        mort_mat,
+        rec_vec,
         s1_vec,
         s2_vec,
         init_v: {

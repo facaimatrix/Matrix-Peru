@@ -498,7 +498,9 @@ fn check_forest(state: State<AppState>, lat: f64, lon: f64) -> bool {
 
 /// Open a native "Save As" dialog and write `contents` to the chosen path.
 /// Returns the saved path, or an empty string if the user cancelled.
-#[tauri::command]
+/// `(async)` keeps the blocking dialog off the main thread, where it would
+/// stop every other command from answering until it closes.
+#[tauri::command(async)]
 fn save_text_file(app: AppHandle, default_name: String, contents: String) -> Result<String, String> {
     let file = app
         .dialog()
@@ -519,6 +521,58 @@ fn save_text_file(app: AppHandle, default_name: String, contents: String) -> Res
     }
 }
 
+/// Decode standard base64 (padding and line breaks are ignored).
+fn decode_base64(s: &str) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity(s.len() / 4 * 3);
+    let mut acc: u32 = 0;
+    let mut bits: u32 = 0;
+    for c in s.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' | b'\r' | b'\n' => continue,
+            _ => return Err("Invalid base64 data".to_string()),
+        };
+        acc = ((acc << 6) | u32::from(v)) & 0x00FF_FFFF;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+        }
+    }
+    Ok(out)
+}
+
+/// Like `save_text_file`, for binary output (Stand View GIF/PNG export).
+/// `(async)` keeps the blocking dialog off the main thread, where it would
+/// freeze the window.
+#[tauri::command(async)]
+fn save_binary_file(
+    app: AppHandle,
+    default_name: String,
+    data_base64: String,
+) -> Result<String, String> {
+    let bytes = decode_base64(&data_base64)?;
+    match app
+        .dialog()
+        .file()
+        .set_file_name(&default_name)
+        .blocking_save_file()
+    {
+        Some(fp) => {
+            let path = fp
+                .into_path()
+                .map_err(|e| format!("Invalid save path: {}", e))?;
+            std::fs::write(&path, bytes).map_err(|e| format!("Write failed: {}", e))?;
+            Ok(path.display().to_string())
+        }
+        None => Ok(String::new()), // cancelled
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -528,6 +582,7 @@ fn main() {
             find_nearest,
             run_sim,
             save_text_file,
+            save_binary_file,
             check_forest
         ])
         .run(tauri::generate_context!())
