@@ -112,7 +112,7 @@ The app is `target/release/matrixpro-peru.exe`. To copy it elsewhere, take
 ## Stand View (animated stand visualization)
 
 Output tab → **Stand View** (Vista del Rodal) draws the simulated stand year by year, with
-perspective, profile and overhead views, and exports an animated GIF or a PNG.
+perspective, profile and overhead views, and exports an animated GIF, an MP4 video or a PNG.
 
 | File | Role |
 |------|------|
@@ -123,6 +123,7 @@ perspective, profile and overhead views, and exports an animated GIF or a PNG.
 | `src/stand-model.js` | turns the time series into individual, persistent trees |
 | `src/stand-view.js` | rendering, controls, export |
 | `src/gif-encoder.js` | animated GIF writer (no dependencies) |
+| `src/mp4-encoder.js` | MP4 writer; H.264 compression by the webview (WebCodecs) |
 | `T` in `src/app.js` | its Spanish and English text (`sv_*` keys) |
 
 - **What is model output:** tree counts per DBH class (drawn = `round(trees/ha ×

@@ -33,7 +33,7 @@ const StandView = (() => {
   let clock = 0, playing = false, hold = 0, raf = 0, lastTs = 0, busy = false, loading = false, relabelLater = false;
   let dirty = true;
   const defaults = { areaHa: 1, seed: 1, view: "persp", speed: 2, loop: true, snags: true, stumps: true,
-    az: 0.5, pitch: 0.21, zoom: 1, gifw: 1000, gifn: 120, shapes: "genus" };
+    az: 0.5, pitch: 0.21, zoom: 1, gifw: 1000, gifn: 120, vidw: 1920, shapes: "genus" };
   const opt = { ...defaults };
   const images = new Map(), derived = new Map();
 
@@ -464,7 +464,8 @@ const StandView = (() => {
       <div class="sec-hdr"><span class="hdr-icon">🎬</span> ${tx("sv_title")}
         <span class="sv-actions">
           <button class="btn-dl" id="sv_png">${tx("sv_png")}</button>
-          <button class="btn-dl" id="sv_gif">${tx("sv_gif")}</button></span></div>
+          <button class="btn-dl" id="sv_gif">${tx("sv_gif")}</button>
+          <button class="btn-dl" id="sv_mp4">${tx("sv_mp4")}</button></span></div>
       <canvas id="sv_canvas" tabindex="0" aria-label="${tx("sv_aria")}"></canvas>
       <div class="sv-bar">
         <button id="sv_first" title="${tx("sv_first")}">⏮</button>
@@ -481,6 +482,7 @@ const StandView = (() => {
         ${sel("sv_speed", tx("sv_speed"), [0.5, 1, 2, 5, 10].map(s => [s, tx("sv_rate", s)]), opt.speed)}
         ${sel("sv_gifw", tx("sv_gifw"), [800, 1000, 1200].map(n => [n, n + " px"]), opt.gifw)}
         ${sel("sv_gifn", tx("sv_gifn"), [[60, tx("sv_upto", 60)], [120, tx("sv_upto", 120)], [600, tx("sv_every")]], opt.gifn)}
+        ${sel("sv_vidw", tx("sv_vidw"), [[1200, "1200 × 640"], [1920, "1920 × 1024"]], opt.vidw)}
         ${chk("sv_loop", tx("sv_loop"), opt.loop)}
         ${chk("sv_snags", tx("sv_snags"), opt.snags)}
         ${chk("sv_stumps", tx("sv_stumps"), opt.stumps)}
@@ -505,11 +507,13 @@ const StandView = (() => {
     on("sv_view", "view", e => e.value); on("sv_area", "areaHa", e => +e.value, true); on("sv_speed", "speed", e => +e.value);
     if (zg) on("sv_shapes", "shapes", e => e.value);
     on("sv_gifw", "gifw", e => +e.value); on("sv_gifn", "gifn", e => +e.value);
+    on("sv_vidw", "vidw", e => +e.value);
     on("sv_loop", "loop", e => e.checked); on("sv_snags", "snags", e => e.checked); on("sv_stumps", "stumps", e => e.checked);
     $("sv_seed").onclick = () => { opt.seed = 1 + Math.floor(Math.random() * 1e9); rebuild(); };
     $("sv_cam").onclick = () => { opt.az = defaults.az; opt.pitch = defaults.pitch; opt.zoom = 1; dirty = true; };
     $("sv_png").onclick = exportPng;
     $("sv_gif").onclick = exportGif;
+    $("sv_mp4").onclick = exportVideo;
 
     let drag = null;
     cv.onpointerdown = (e) => { if (opt.view !== "persp" || busy) return; drag = [e.clientX, e.clientY, opt.az, opt.pitch]; cv.setPointerCapture(e.pointerId); };
@@ -623,30 +627,76 @@ const StandView = (() => {
     return { bytes: enc.finish(), frames: years.length };
   }
 
-  async function exportGif() {
-    if (busy) return;
+  // ── Video ─────────────────────────────────────────────────────────────────
+  // Every frame is drawn in turn (not recorded from the screen), so the result
+  // does not depend on how fast this computer is.
+  const FPS = 30, VIDEO_MAX_S = 180, HOLD_START = 1, HOLD_END = 2;
+  // Years per second: the chosen speed, raised only if the video would be too long.
+  function videoPlan() {
+    const speed = Math.max(opt.speed, sim.sim_l / (VIDEO_MAX_S - HOLD_START - HOLD_END));
+    const run = Math.ceil(sim.sim_l / speed * FPS);
+    return { speed, run, frames: HOLD_START * FPS + run + HOLD_END * FPS, faster: speed > opt.speed };
+  }
+  const pause = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = r; c.port2.postMessage(0); });
+
+  async function makeVideo(width, onProgress) {
+    const k = width / W, w = width, h = Math.round(H * k), plan = videoPlan();
+    const enc = await Mp4Encoder.create(w, h, FPS, width > 1400 ? 10e6 : 5e6);
+    if (!enc) throw new Error(tx("sv_err_video"));
+    try {
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      const g = c.getContext("2d");
+      for (let i = 0; i < plan.frames; i++) {
+        const j = Math.max(0, Math.min(plan.run, i - HOLD_START * FPS));
+        if (i === 0 || (j > 0 && i <= HOLD_START * FPS + plan.run)) draw(g, plan.run ? sim.sim_l * j / plan.run : 0, k);
+        await enc.add(c);
+        if (onProgress) onProgress(i + 1, plan.frames);
+        if (i % 2) await pause();              // keep the window responsive
+      }
+      return { bytes: await enc.finish(), frames: plan.frames, seconds: plan.frames / FPS, ...plan, codec: enc.codec };
+    } finally { enc.close(); }
+  }
+
+  // Runs one export at a time; its own button becomes "cancel" meanwhile.
+  let cancelled = false;
+  async function runExport(id, label, job) {
+    if (busy) { if (opt.exporting === id) cancelled = true; return; }
     setPlaying(false);
-    busy = true;
-    const btn = $("sv_gif"), controls = document.querySelectorAll("#sub-stand button, #sub-stand select, #sub-stand input");
+    busy = true; cancelled = false; opt.exporting = id;
+    const btn = $(id), controls = [...document.querySelectorAll("#sub-stand button, #sub-stand select, #sub-stand input")].filter(e => e !== btn);
     controls.forEach(e => { e.disabled = true; });
     const token = loadToken;
+    status("");
     try {
-      const { bytes, frames } = await makeGif(opt.gifw, opt.gifn, (i, n) => {
+      await job((i, n) => {
         if (token !== loadToken) throw new Error(tx("sv_restarted"));
-        btn.textContent = tx("sv_encoding", i, n);
-      });
-      status(tx("sv_ready", frames, mb(bytes.length)));
-      const p = await saveBinary(`${tx("sv_file_gif")}_${stamp()}.gif`, bytes, "image/gif");
-      status(p ? tx("sv_saved_gif", p, frames, mb(bytes.length)) : tx("sv_cancelled"));
+        if (cancelled) throw new Error(tx("sv_stopped"));
+        btn.textContent = tx("sv_encoding", Math.floor(100 * i / n));
+      }, () => { btn.disabled = true; });      // past the point where cancel makes sense
     } catch (e) {
-      status(tx("sv_failed", e.message || e));
+      status(cancelled ? tx("sv_stopped") : tx("sv_failed", e.message || e));
     } finally {
-      busy = false; dirty = true;
-      btn.textContent = tx("sv_gif");
+      busy = false; dirty = true; opt.exporting = null;
+      btn.textContent = tx(label); btn.disabled = false;
       controls.forEach(e => { e.disabled = false; });
       if (relabelLater) { const s = $("sv_status") ? $("sv_status").textContent : ""; relabel(); status(s); }
     }
   }
+  const exportGif = () => runExport("sv_gif", "sv_gif", async (progress, saving) => {
+    const { bytes, frames } = await makeGif(opt.gifw, opt.gifn, progress);
+    saving();
+    status(tx("sv_ready", "GIF", frames, mb(bytes.length)));
+    const p = await saveBinary(`${tx("sv_file_gif")}_${stamp()}.gif`, bytes, "image/gif");
+    status(p ? tx("sv_saved_gif", p, frames, mb(bytes.length)) : tx("sv_cancelled"));
+  });
+  const exportVideo = () => runExport("sv_mp4", "sv_mp4", async (progress, saving) => {
+    const v = await makeVideo(opt.vidw, progress);
+    saving();
+    const note = v.faster ? " " + tx("sv_faster", +v.speed.toFixed(1)) : "";
+    status(tx("sv_ready", "MP4", v.frames, mb(v.bytes.length)) + note);
+    const p = await saveBinary(`${tx("sv_file_gif")}_${stamp()}.mp4`, v.bytes, "video/mp4");
+    status(p ? tx("sv_saved_mp4", p, Math.round(v.seconds), mb(v.bytes.length)) + note : tx("sv_cancelled"));
+  });
 
   // ── Public ────────────────────────────────────────────────────────────────
   async function load(result) {
@@ -691,6 +741,6 @@ const StandView = (() => {
     if (loading || !stand) message(`<div class="out-empty"><p>${tx(loading ? "sv_loading" : "sv_empty")}</p></div>`);
     else { buildUi(); dirty = true; }
   }
-  return { load, clear, relabel, makeGif,
+  return { load, clear, relabel, makeGif, makeVideo,
     debug: () => ({ stand, zone, sim, opt, draw, set: (time, o) => { Object.assign(opt, o || {}); clock = time; dirty = true; } }) };
 })();
