@@ -98,6 +98,10 @@ fn tif_u32(data: &[u8], off: usize, le: bool) -> Option<u32> {
     let b = data.get(off..off + 4)?;
     Some(if le { u32::from_le_bytes([b[0], b[1], b[2], b[3]]) } else { u32::from_be_bytes([b[0], b[1], b[2], b[3]]) })
 }
+fn tif_u64(data: &[u8], off: usize, le: bool) -> Option<u64> {
+    let b = data.get(off..off + 8)?;
+    Some(if le { u64::from_le_bytes(b.try_into().ok()?) } else { u64::from_be_bytes(b.try_into().ok()?) })
+}
 fn tif_f64(data: &[u8], off: usize, le: bool) -> Option<f64> {
     let b = data.get(off..off + 8)?;
     let u = if le { u64::from_le_bytes(b.try_into().ok()?) } else { u64::from_be_bytes(b.try_into().ok()?) };
@@ -118,37 +122,44 @@ fn raw_tiff_geotransform(path: &std::path::Path) -> Result<(f64, f64, f64, f64),
         _ => return Err("not a TIFF".into()),
     };
 
-    let magic = tif_u16(&data, 2, le).unwrap_or(0);
-    if magic != 42 {
-        return Err(format!("unsupported TIFF magic: {}", magic));
-    }
+    // Classic TIFF (42) uses 32-bit offsets, BigTIFF (43) 64-bit ones.
+    let big = match tif_u16(&data, 2, le).unwrap_or(0) {
+        42 => false,
+        43 => true,
+        magic => return Err(format!("unsupported TIFF magic: {}", magic)),
+    };
+    let offset = |off: usize| -> usize {
+        if big { tif_u64(&data, off, le).unwrap_or(0) as usize } else { tif_u32(&data, off, le).unwrap_or(0) as usize }
+    };
+    // Sizes of: the entry count, one entry, and the value held inside an entry.
+    let (count_size, entry_size, inline) = if big { (8usize, 20usize, 8usize) } else { (2, 12, 4) };
 
-    let mut ifd_off = tif_u32(&data, 4, le).unwrap_or(0) as usize;
+    let mut ifd_off = offset(if big { 8 } else { 4 });
 
     for _ in 0..32 {
-        if ifd_off == 0 || ifd_off + 2 > data.len() { break; }
-        let n_entries = tif_u16(&data, ifd_off, le).unwrap_or(0) as usize;
+        if ifd_off == 0 || ifd_off.saturating_add(count_size) > data.len() { break; }
+        let n_entries = if big { offset(ifd_off) } else { tif_u16(&data, ifd_off, le).unwrap_or(0) as usize };
+        if n_entries > data.len() / entry_size { break; } // corrupt count
 
         let mut scale: Vec<f64> = Vec::new();
         let mut tp:    Vec<f64> = Vec::new();
         let mut xform: Vec<f64> = Vec::new();
 
         for i in 0..n_entries {
-            let e = ifd_off + 2 + i * 12;
+            let e = ifd_off + count_size + i * entry_size;
             let tag   = match tif_u16(&data, e,     le) { Some(v) => v, None => break };
             let typ   = match tif_u16(&data, e + 2, le) { Some(v) => v, None => break };
-            let count = match tif_u32(&data, e + 4, le) { Some(v) => v as usize, None => break };
+            if e + entry_size > data.len() { break; }
+            let count = offset(e + 4);
 
             if !matches!(tag, 33550 | 33922 | 34264) { continue; }
 
             // value_size in bytes per element; only DOUBLE (12) and FLOAT (11) make sense here
             let vsize: usize = match typ { 12 => 8, 11 => 4, _ => continue };
             let total = count.saturating_mul(vsize);
-            let data_off: usize = if total <= 4 {
-                e + 8
-            } else {
-                match tif_u32(&data, e + 8, le) { Some(v) => v as usize, None => continue }
-            };
+            let value_at = e + 4 + if big { 8 } else { 4 };
+            let data_off = if total <= inline { value_at } else { offset(value_at) };
+            if data_off.saturating_add(total) > data.len() { continue; }
 
             let vals: Vec<f64> = (0..count).filter_map(|j| {
                 let o = data_off + j * vsize;
@@ -167,8 +178,7 @@ fn raw_tiff_geotransform(path: &std::path::Path) -> Result<(f64, f64, f64, f64),
             return Ok((xform[3], xform[7], xform[0].abs(), xform[5].abs()));
         }
 
-        let next_loc = ifd_off + 2 + n_entries * 12;
-        ifd_off = tif_u32(&data, next_loc, le).unwrap_or(0) as usize;
+        ifd_off = offset(ifd_off + count_size + n_entries * entry_size);
     }
 
     Err("GeoTIFF geotransform tags not found in any IFD".into())
@@ -587,4 +597,42 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running MatrixPro Peru");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mask() -> ForestMask {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/forest_mask.tif");
+        ForestMask::load(&p).expect("forest_mask.tif (a BigTIFF) must load")
+    }
+
+    #[test]
+    fn forest_mask_loads_with_its_georeferencing() {
+        let m = mask();
+        assert_eq!((m.width, m.height), (2817, 4085));
+        assert_eq!(m.data.len(), 2817 * 4085);
+        assert!((m.origin_lon + 81.32897424776088).abs() < 1e-9);
+        assert!((m.origin_lat + 0.008983152841195215).abs() < 1e-9);
+        assert!((m.scale_x - 0.004491576420597608).abs() < 1e-12);
+    }
+
+    #[test]
+    fn forest_mask_classifies_known_places() {
+        let m = mask();
+        assert!(!m.is_forest(-3.75, -73.25)); // Iquitos city
+        assert!(m.is_forest(-2.8208, -71.2958)); // lowland rainforest
+        assert!(!m.is_forest(-12.05, -77.04)); // Lima
+        assert!(!m.is_forest(-14.5, -75.6)); // Ica desert
+        assert!(!m.is_forest(-10.0, -80.5)); // ocean (nodata)
+        assert!(!m.is_forest(10.0, 10.0)); // outside the raster
+    }
+
+    #[test]
+    fn base64_round_values() {
+        assert_eq!(decode_base64("TWFu").unwrap(), b"Man");
+        assert_eq!(decode_base64("TWE=").unwrap(), b"Ma");
+        assert!(decode_base64("ab*c").is_err());
+    }
 }

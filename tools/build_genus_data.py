@@ -17,8 +17,8 @@ Rules
 - Planted genera in DROP are left out.
 - Shares are by zone and DBH class; a class with fewer than MIN_N trees borrows
   from its neighbours. Genera without a shape in FORMS go to "Other".
-- Heights are medians of the measured heights (visual estimates in the field
-  for many trees), smoothed with a Weibull curve per zone.
+- Heights are medians of the recorded heights (possibly visual estimates
+  made in the field), smoothed with a Weibull curve per zone.
 """
 import json
 import sys
