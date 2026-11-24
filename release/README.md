@@ -1,4 +1,4 @@
-# MatrixPro Peru — Versión 1.0.2
+# MatrixPro Peru — Versión 1.1.0
 
 Simulador de crecimiento forestal basado en modelos matriciales para parcelas del Perú.
 
@@ -6,8 +6,12 @@ Simulador de crecimiento forestal basado en modelos matriciales para parcelas de
 
 | Archivo | Descripción |
 |---|---|
-| `MatrixPro Peru_1.0.2_x64-setup.exe` | Instalador para Windows (recomendado) |
-| `MatrixPro Peru_1.0.2_x64_en-US.msi` | Instalador MSI para Windows |
+| `MatrixPro Peru_1.1.0_x64-setup.exe` | Instalador para Windows (recomendado) |
+| `MatrixPro Peru_1.1.0_x64_en-US.msi` | Instalador MSI para Windows |
+| `MatrixPro_Peru_Guia_de_Uso.pdf` | Manual de uso |
+
+Se descargan de la página [Releases](https://github.com/facaimatrix/Matrix-Peru/releases) del repositorio.
+Los cambios de esta versión están en [NOTAS_1.1.0.md](NOTAS_1.1.0.md). Esta carpeta conserva instaladores anteriores.
 
 ## Requisitos del sistema
 
@@ -22,5 +26,5 @@ Simulador de crecimiento forestal basado en modelos matriciales para parcelas de
 
 ## Notas
 
-- Este repositorio contiene únicamente los instaladores finales, no el código fuente.
+- El código fuente está en las carpetas `src` y `src-tauri` de este repositorio.
 - Si desea compartir la aplicación con otros usuarios, distribuya el archivo `.exe` o `.msi`.

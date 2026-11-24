@@ -1,6 +1,6 @@
 [package]
 name = "matrixpro-peru"
-version = "1.0.2"
+version = "1.1.0"
 description = "Matrix Model Based Forest Growth Simulator (Peru)"
 authors = ["Liang Lab, Purdue University"]
 edition = "2021"

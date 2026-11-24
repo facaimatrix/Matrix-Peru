@@ -134,7 +134,7 @@ perspective, profile and overhead views, and exports an animated GIF, an MP4 vid
   life from the inventory's shares by ecozone and DBH class, limited to genera
   that reach the size that tree grows to. Shapes group genera that look alike
   (`FORMS` in `build_genus_data.py`); the rest are drawn with generic shapes.
-  Heights are inventory medians, many of them visual estimates. Delete
+  Heights are inventory medians and may be visual field estimates. Delete
   `genus.json` to go back to generic shapes and the equation below.
 - **What is illustrative:** positions, crown shapes, crown widths and, without
   `genus.json`, heights.
