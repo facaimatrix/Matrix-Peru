@@ -77,6 +77,26 @@ cargo tauri build    # produces an installer/binary for your OS
 (If you used `npm i -g @tauri-apps/cli`, run `tauri dev` / `tauri build`
 from the project root instead.)
 
+### Building on Windows without admin rights
+
+Needs Rtools45 and the Rust GNU toolchain (installed per user, no admin):
+
+```powershell
+rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
+cd src-tauri
+$env:PATH = "C:\rtools45\x86_64-w64-mingw32.static.posix\bin;$env:PATH"
+# The locked tauri-build 2.6 does not know the build folder layout of recent
+# cargo (seen with 1.100), so the next line and the two copies stand in for it.
+New-Item -ItemType Directory -Force target/release/build/build
+cargo +stable-x86_64-pc-windows-gnu build --release --locked --features tauri/custom-protocol
+Copy-Item target/release/build/webview2-com-sys/*/out/x64/WebView2Loader.dll target/release
+Copy-Item data target/release -Recurse -Force
+```
+
+The build may rewrite `gen/schemas/*.json`; `git restore gen/schemas` undoes it.
+The app is `target/release/matrixpro-peru.exe`. To copy it elsewhere, take
+`WebView2Loader.dll` and the `data/` folder from `target/release` with it.
+
 ## How the port maps to the original
 
 | Original (R/Shiny)                          | Port |
@@ -88,6 +108,30 @@ from the project root instead.)
 | Leaflet map, Chart.js, tables               | `app.js` (unchanged behavior) |
 | `sf` + `rnaturalearth` (department badge)   | bundled GeoJSON + JS ray-casting point-in-polygon |
 | `downloadHandler`                           | native Save-As via `tauri-plugin-dialog` (+ Blob fallback) |
+
+## Stand View (animated stand visualization)
+
+Output tab → **Stand View** (Vista del Rodal) draws the simulated stand year by year, with
+perspective, profile and overhead views, and exports an animated GIF or a PNG.
+
+| File | Role |
+|------|------|
+| `tools/generate_tree_sprites.py` | draws the sprite library (Python + Pillow; only needed to change the art) |
+| `src/assets/trees/` | 157 PNGs + `manifest.json`: 3 ecozones × 13 DBH classes × (3 crown shapes + 1 snag) + 1 stump |
+| `src/stand-model.js` | turns the time series into individual, persistent trees |
+| `src/stand-view.js` | rendering, controls, export |
+| `src/gif-encoder.js` | animated GIF writer (no dependencies) |
+| `T` in `src/app.js` | its Spanish and English text (`sv_*` keys) |
+
+- **What is model output:** tree counts per DBH class (drawn = `round(trees/ha ×
+  plot area)`, exactly, every year) and the recruitment, upgrowth, mortality and
+  harvest events. `simulation.rs` returns those flows as `rec_vec`, `up_mat`,
+  `mort_mat`; computing them does not change the simulation.
+- **What is illustrative:** positions, crown shapes, crown widths and heights.
+  `perudata.csv` has no species (`FT` is 999 everywhere), so ecozone (`GEC`) is
+  the only tree class. Heights use the W. Amazonia Weibull of Feldpausch et al.
+  (2012, Biogeosciences 9:3381–3403, Table 3); `HEIGHT_SCALE` (SA_13, SA_16) and
+  `CROWN` in the generator are assumptions to replace with local allometries.
 
 ## Important correctness note (read this)
 

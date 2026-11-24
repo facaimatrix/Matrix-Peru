@@ -61,6 +61,39 @@ const T = {
     csv_shannon: "Shannon_S1", csv_simpson: "Simpson_S2",
     csv_file_tph: "tph_resultados", csv_file_ba: "ab_resultados",
     csv_file_agb: "bas_resultados", csv_file_div: "diversidad_resultados",
+    // Stand View
+    sub_stand: "🎬 Vista del Rodal",
+    sv_title: "Rodal Simulado en el Tiempo", sv_empty: "Ejecute una simulación para ver el rodal.",
+    sv_loading: "Cargando imágenes de árboles…", sv_png: "⬇ Guardar PNG", sv_gif: "⬇ Exportar GIF",
+    sv_play: "▶ Reproducir", sv_pause: "⏸ Pausa", sv_play_tip: "Reproducir / pausa (espacio)",
+    sv_first: "Primer año", sv_prev: "Año anterior", sv_next: "Año siguiente", sv_year: (y) => `Año ${y}`,
+    sv_view: "Vista", sv_persp: "Perspectiva", sv_profile: "Perfil", sv_overhead: "Planta",
+    sv_plot: "Parcela", sv_speed: "Velocidad", sv_rate: (v) => `${v} años/s`,
+    sv_gifw: "Ancho GIF", sv_gifn: "Cuadros GIF", sv_upto: (n) => `hasta ~${n}`, sv_every: "cada año",
+    sv_loop: "Repetir", sv_snags: "Muertos en pie", sv_stumps: "Tocones",
+    sv_layout: "🎲 Nueva distribución", sv_layout_tip: "Nuevas posiciones aleatorias", sv_reset: "Restablecer vista",
+    sv_aria: "Vista animada del rodal simulado",
+    sv_note: "Vista en perspectiva: arrastre para girar, rueda para acercar. Cada árbol dibujado es un árbol de la parcela: en cada año, el número por clase DAP es igual a los árboles/ha simulados × el área de la parcela, redondeado. El crecimiento, la mortalidad, el reclutamiento y la cosecha siguen las tasas del modelo. Las posiciones, formas de copa y alturas no son resultados del modelo y son ilustrativas; perudata.csv no contiene especies, por lo que las imágenes solo varían por zona ecológica y clase DAP.",
+    sv_cap_persp: (s) => `Parcela de ${s} × ${s} m · jalones de esquina con bandas cada 10 m`,
+    sv_cap_profile: (s, d) => `Perfil de una franja de ${s} × ${d} m por el centro de la parcela`,
+    sv_cap_overhead: "Copas vistas desde arriba, color por clase DAP · naranja = tocón, gris = muerto en pie",
+    sv_of: (n) => `de ${n}`, sv_harvest: (n) => `Cosecha: ${n} árboles/ha`,
+    sv_trees: "Árboles", sv_ba: "Área basal", sv_agb: "Biomasa (BAS)",
+    sv_recruited: "Reclutados este año", sv_died: "Murieron este año",
+    sv_dist: "Árboles/ha por clase DAP (cm)", sv_sqrt: "escala √",
+    sv_legend: "marca clara = rodal objetivo, naranja = cosechado este año",
+    sv_map: "Planta", sv_trace: "Área basal (m²/ha)",
+    sv_illustrative: "Posiciones, formas de copa y alturas: ilustrativas.",
+    sv_sprites_for: (z) => ` (imágenes de ${z})`,
+    sv_zones: { SA_11: "Bosque lluvioso tropical", SA_13: "Bosque seco tropical", SA_16: "Sistema montañoso tropical" },
+    sv_encoding: (i, n) => `Codificando ${i}/${n}…`,
+    sv_ready: (f, m) => `GIF listo: ${f} cuadros, ${m}. Elija dónde guardarlo…`,
+    sv_saved: (p) => `Guardado: ${p}`, sv_saved_gif: (p, f, m) => `Guardado: ${p} (${f} cuadros, ${m})`,
+    sv_cancelled: "Guardado cancelado.", sv_failed: (e) => `Error al exportar: ${e}`,
+    sv_restarted: "se inició una nueva simulación",
+    sv_err_manifest: "no se encontró assets/trees/manifest.json", sv_err_sprite: (f) => `no se puede cargar la imagen ${f}`,
+    sv_err_zone: (z) => `no hay imágenes de árboles para la zona ${z}`,
+    sv_file_gif: "rodal_simulacion", sv_file_png: "rodal_anio",
   },
   en: {
     title_sub: "Matrix Model Based Forest Growth Simulator",
@@ -118,6 +151,39 @@ const T = {
     csv_shannon: "Shannon_S1", csv_simpson: "Simpson_S2",
     csv_file_tph: "tph_results", csv_file_ba: "ba_results",
     csv_file_agb: "agb_results", csv_file_div: "diversity_results",
+    // Stand View
+    sub_stand: "🎬 Stand View",
+    sv_title: "Simulated Stand over Time", sv_empty: "Run a simulation to see the stand.",
+    sv_loading: "Loading tree images…", sv_png: "⬇ Save PNG", sv_gif: "⬇ Export GIF",
+    sv_play: "▶ Play", sv_pause: "⏸ Pause", sv_play_tip: "Play / pause (space)",
+    sv_first: "First year", sv_prev: "Previous year", sv_next: "Next year", sv_year: (y) => `Year ${y}`,
+    sv_view: "View", sv_persp: "Perspective", sv_profile: "Profile", sv_overhead: "Overhead",
+    sv_plot: "Plot", sv_speed: "Speed", sv_rate: (v) => `${v} yr/s`,
+    sv_gifw: "GIF width", sv_gifn: "GIF frames", sv_upto: (n) => `up to ~${n}`, sv_every: "every year",
+    sv_loop: "Loop", sv_snags: "Standing dead", sv_stumps: "Stumps",
+    sv_layout: "🎲 New layout", sv_layout_tip: "New random tree positions", sv_reset: "Reset view",
+    sv_aria: "Animated view of the simulated stand",
+    sv_note: "Perspective view: drag to orbit, wheel to zoom. Each tree drawn is one tree on the plot: in every year the count in each DBH class equals the simulated trees/ha × plot area, rounded. Upgrowth, deaths, recruits and cut trees follow the model's own rates. Positions, crown shapes and tree heights are not model outputs and are illustrative; perudata.csv has no species, so images differ by ecozone and DBH class only.",
+    sv_cap_persp: (s) => `Plot ${s} × ${s} m · corner poles banded every 10 m`,
+    sv_cap_profile: (s, d) => `Profile of a ${s} × ${d} m strip through the plot centre`,
+    sv_cap_overhead: "Crowns from above, coloured by DBH class · orange = stump, grey = standing dead",
+    sv_of: (n) => `of ${n}`, sv_harvest: (n) => `Harvest: ${n} trees/ha cut`,
+    sv_trees: "Trees", sv_ba: "Basal area", sv_agb: "Biomass (AGB)",
+    sv_recruited: "Recruited this year", sv_died: "Died this year",
+    sv_dist: "Trees/ha by DBH class (cm)", sv_sqrt: "√ scale",
+    sv_legend: "light tick = target stand, orange = cut this year",
+    sv_map: "Overhead", sv_trace: "Basal area (m²/ha)",
+    sv_illustrative: "Positions, crown shapes and heights are illustrative.",
+    sv_sprites_for: (z) => ` (images for ${z})`,
+    sv_zones: { SA_11: "Tropical rainforest", SA_13: "Tropical dry forest", SA_16: "Tropical mountain system" },
+    sv_encoding: (i, n) => `Encoding ${i}/${n}…`,
+    sv_ready: (f, m) => `GIF ready: ${f} frames, ${m}. Choose where to save it…`,
+    sv_saved: (p) => `Saved ${p}`, sv_saved_gif: (p, f, m) => `Saved ${p} (${f} frames, ${m})`,
+    sv_cancelled: "Save cancelled.", sv_failed: (e) => `Export failed: ${e}`,
+    sv_restarted: "a new simulation was started",
+    sv_err_manifest: "assets/trees/manifest.json not found", sv_err_sprite: (f) => `cannot load image ${f}`,
+    sv_err_zone: (z) => `no tree images for ecozone ${z}`,
+    sv_file_gif: "stand_simulation", sv_file_png: "stand_year",
   }
 };
 
@@ -215,6 +281,7 @@ function applyLang() {
   // re-render output if a simulation result exists
   if (SIM) renderAll();
   else if (LAST_SIM_ERR) showSimError(LAST_SIM_ERR);
+  StandView.relabel();
 }
 
 const DBH_CLASSES = ["10-15","15-20","20-25","25-30","30-35","35-40","40-45",
@@ -268,7 +335,7 @@ document.querySelectorAll(".tab-btn").forEach(b => b.addEventListener("click", (
 document.querySelectorAll(".subtab-btn").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll(".subtab-btn").forEach(x => x.classList.remove("active"));
   b.classList.add("active");
-  ["tph","ba","agb","div"].forEach(s =>
+  ["tph","ba","agb","div","stand"].forEach(s =>
     document.getElementById(`sub-${s}`).classList.toggle("hidden", s !== b.dataset.sub));
 }));
 
@@ -558,6 +625,7 @@ document.getElementById("run_btn").addEventListener("click", async () => {
   if (lat < -18.35 || lat > -0.03 || lon < -81.33 || lon > -68.65) {
     alert(t("err_outside_peru")); return;
   }
+  StandView.clear();
   // Switch to output tab, show running state.
   document.querySelector('.tab-btn[data-tab="output"]').click();
   document.getElementById("sub-tph").innerHTML =
@@ -577,6 +645,7 @@ document.getElementById("run_btn").addEventListener("click", async () => {
     SIM = await invoke("run_sim", { params });
     LAST_SIM_ERR = null;
     renderAll();
+    StandView.load(SIM);   // not in renderAll: a language switch must not restart it
   } catch (err) {
     showSimError(err);
   }
