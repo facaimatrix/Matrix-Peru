@@ -33,7 +33,8 @@ const StandView = (() => {
   let clock = 0, playing = false, hold = 0, raf = 0, lastTs = 0, busy = false, loading = false, relabelLater = false;
   let dirty = true;
   const defaults = { areaHa: 1, seed: 1, view: "persp", speed: 2, loop: true, snags: true, stumps: true,
-    az: 0.5, pitch: 0.21, zoom: 1, gifw: 1000, gifn: 120, vidw: 1920, shapes: "genus" };
+    az: 0.5, pitch: 0.21, zoom: 1, gifw: 1000, gifn: 120, vidw: 1920, shapes: "genus",
+    compMode: "mix", comp: null, domGenus: null, domPct: 80, listText: "" };
   const opt = { ...defaults };
   const images = new Map(), derived = new Map();
 
@@ -420,7 +421,15 @@ const StandView = (() => {
     g.font = "10px Segoe UI, sans-serif"; g.fillStyle = C.faint; g.textAlign = "right";
     g.fillText(series.maxBa.toFixed(0), gx + gw - 3, my + 10); g.fillText("0", gx + gw - 3, my + ms - 3);
     g.textAlign = "left";
-    g.fillText(tx(genera && genera.zones[zoneKey] ? "sv_illustrative_genus" : "sv_illustrative"), x, H - 10);
+    const comp = activeComp();
+    if (comp) {                                                // set by the user: say so on exports too
+      g.fillStyle = C.gold;
+      let s = tx("sv_comp_tag", compText(comp));
+      if (g.measureText(s).width > w) { while (g.measureText(s + "…").width > w) s = s.slice(0, -1); s += "…"; }
+      g.fillText(s, x, H - 20);
+      g.fillStyle = C.faint;
+    }
+    g.fillText(tx(comp ? "sv_illustrative_comp" : genera && genera.zones[zoneKey] ? "sv_illustrative_genus" : "sv_illustrative"), x, H - 7);
   }
   function zoneLabel() {
     return (tx("sv_zones")[zoneKey] || zone.name) + (zoneKey === sim.gec ? "" : tx("sv_sprites_for", zoneKey));
@@ -448,6 +457,129 @@ const StandView = (() => {
     if (cv.width === px) return;
     cv.width = px; cv.height = Math.round(px * H / W);
     dirty = true;
+  }
+
+  // ── Species composition (picture only) ────────────────────────────────────
+  // opt.comp is the composition in use, [{genus, pct}], or null for the ecozone
+  // mix. It is replaced only by valid input.
+  const activeComp = () => opt.shapes === "genus" && genera && genera.zones[zoneKey] ? opt.comp : null;
+  const pctText = (v) => (+v.toFixed(1)).toLocaleString(LANG === "es" ? "es-PE" : "en-US") + "%";
+  const compRest = (comp) => Math.max(0, 100 - comp.reduce((a, e) => a + e.pct, 0));
+  function compText(comp) {
+    const parts = [...comp].sort((a, b) => b.pct - a.pct).map(e => `${pctText(e.pct)} ${e.genus}`);
+    if (compRest(comp) > 0.05) parts.push(`${pctText(compRest(comp))} ${tx("sv_comp_rest")}`);
+    return parts.join(" + ");
+  }
+  const genusName = (s) => {
+    const w = s.trim().split(/[\s_]+/)[0].replace(/[^\p{L}-]/gu, "").toLowerCase();
+    return w && w[0].toUpperCase() + w.slice(1);
+  };
+  // "Eucalyptus 80", one per line or separated by ; or , — a species name counts
+  // for its genus. Throws a message for the user.
+  function parseList(text) {
+    const sum = new Map();
+    for (const part of text.split(/[\n;]+|,(?!\s*\d)/)) {
+      if (!part.trim()) continue;
+      const m = part.trim().match(/^(.*?)[\s:=|,]+(\d+(?:[.,]\d+)?)\s*%?$/), g = m && genusName(m[1]);
+      if (!g) throw new Error(tx("sv_comp_bad", part.trim().slice(0, 40)));
+      if (/^(otr[oa]s?|others?|rest[oe]?)$/i.test(g)) continue;   // the remainder
+      sum.set(g, (sum.get(g) || 0) + parseFloat(m[2].replace(",", ".")));
+    }
+    const comp = [...sum].map(([genus, pct]) => ({ genus, pct })).filter(e => e.pct > 0);
+    const tot = comp.reduce((a, e) => a + e.pct, 0);
+    if (!comp.length) throw new Error(tx("sv_comp_none"));
+    if (tot > 100.5) throw new Error(tx("sv_comp_over", pctText(tot)));
+    if (tot > 100) comp.forEach(e => { e.pct *= 100 / tot; });      // rounding in the source
+    return comp;
+  }
+  const compFiles = (gd, key, comp) => (comp || []).flatMap(e => {
+    const f = gd.forms[formName(gd, key, e.genus)];
+    return f ? f.sizes.map(x => x.file) : [];
+  });
+  let compToken = 0;
+  async function applyComp() {
+    const token = ++compToken, run = loadToken;
+    try {
+      let comp = null;
+      if (opt.compMode === "dom") {
+        const p = opt.domPct;
+        if (!(p > 0 && p <= 100)) throw new Error(tx("sv_comp_pct"));
+        comp = [{ genus: opt.domGenus, pct: p }];
+      } else if (opt.compMode === "list") {
+        if (!opt.listText.trim()) { compMessage(""); return; }       // nothing typed yet
+        comp = parseList(opt.listText);
+      }
+      await Promise.all(compFiles(genera, zoneKey, comp).map(loadImage));
+      if (token !== compToken || run !== loadToken) return;          // replaced meanwhile
+      opt.comp = comp;
+      rebuild();
+      compMessage(compSummary());
+    } catch (e) { if (token === compToken) compMessage("⚠ " + (e.message || e), true); }
+  }
+  // What was drawn in year 0, and what does not fit the genus.
+  function compSummary() {
+    const comp = opt.comp;
+    if (!comp || !stand) return "";
+    const n = new Map(), first = stand.trees.filter(t => t.born === 0);
+    for (const t of first) n.set(t.genus, (n.get(t.genus) || 0) + 1);
+    const rows = [...comp].sort((a, b) => b.pct - a.pct), cnt = (e) => n.get(e.genus) || 0;
+    const parts = rows.map(e => `${e.genus} ${pctText(e.pct)} (${cnt(e)})`);
+    const left = first.length - rows.reduce((a, e) => a + cnt(e), 0);
+    if (compRest(comp) > 0.05) parts.push(`${tx("sv_comp_rest")} ${pctText(compRest(comp))} (${left})`);
+    let s = tx("sv_comp_drawn", parts.join(", "));
+    const noShape = rows.filter(e => !genera.forms[formName(genera, zoneKey, e.genus)]).map(e => e.genus);
+    if (noShape.length) s += " " + tx("sv_comp_noshape", noShape.join(", "));
+    for (const e of rows) {
+      const f = genera.forms[formName(genera, zoneKey, e.genus)];
+      if (f && f.few) s += " " + tx("sv_comp_few", e.genus, f.few);
+    }
+    const big = stand.trees.filter(t => comp.some(e => e.genus === t.genus) && genera.cap[t.genus] < StandModel.topClass(t)).length;
+    if (big) s += " " + tx("sv_comp_big", big);
+    return s;
+  }
+  function compMessage(s, bad) {
+    const el = $("sv_compmsg");
+    if (el) { el.textContent = s; el.classList.toggle("sv-bad", !!bad); }
+  }
+  // Genera offered for "one dominant genus": this ecozone's, then the others.
+  function genusGroups(zg) {
+    const here = new Set(zg.mix.flatMap(x => Object.keys(x)).filter(n => n !== "Other"));
+    const all = Object.keys(genera.genus_form).filter(n => genera.forms[formName(genera, zoneKey, n)]).sort();
+    return [[tx("sv_comp_here"), all.filter(n => here.has(n))], [tx("sv_comp_else"), all.filter(n => !here.has(n))]];
+  }
+  function topGenus(zg) {
+    const t = {};
+    for (const x of zg.mix.slice(0, 4)) for (const [n, v] of Object.entries(x)) if (n !== "Other") t[n] = (t[n] || 0) + v;
+    return Object.keys(t).sort((a, b) => t[b] - t[a])[0];
+  }
+  function compUi(zg) {
+    if (!opt.domGenus) opt.domGenus = topGenus(zg);
+    const o = (v, n, val) => `<option value="${v}"${v === val ? " selected" : ""}>${n}</option>`;
+    return `<div class="sv-bar" id="sv_comprow">
+        <label class="sv-opt">${tx("sv_comp")}<select id="sv_comp">${[["mix", "sv_comp_mix"], ["dom", "sv_comp_dom"], ["list", "sv_comp_list"]].map(([v, k]) => o(v, tx(k), opt.compMode)).join("")}</select></label>
+        <span class="sv-opt" id="sv_domrow"><select id="sv_dom" aria-label="${tx("sv_comp_dom")}">${genusGroups(zg).map(([l, ns]) =>
+          `<optgroup label="${l}">${ns.map(n => o(n, n, opt.domGenus)).join("")}</optgroup>`).join("")}</select>
+          <input type="number" id="sv_dompct" min="1" max="100" step="1" value="${opt.domPct}" aria-label="${tx("sv_comp_pct")}"> %</span>
+        <span class="sv-opt" id="sv_listrow"><textarea id="sv_list" rows="3" spellcheck="false" placeholder="${tx("sv_comp_hint")}" aria-label="${tx("sv_comp_list")}"></textarea>
+          <button id="sv_listgo">${tx("sv_comp_apply")}</button></span>
+        <div id="sv_compmsg" class="sv-compmsg"></div>
+        <div class="sv-note">${tx("sv_comp_note")}</div>
+      </div>`;
+  }
+  function showComp() {
+    $("sv_comprow").style.display = opt.shapes === "genus" ? "" : "none";
+    $("sv_domrow").style.display = opt.compMode === "dom" ? "" : "none";
+    $("sv_listrow").style.display = opt.compMode === "list" ? "" : "none";
+  }
+  function wireComp() {
+    $("sv_list").value = opt.listText;
+    $("sv_comp").onchange = (e) => { opt.compMode = e.target.value; showComp(); applyComp(); };
+    $("sv_dom").onchange = (e) => { opt.domGenus = e.target.value; applyComp(); };
+    $("sv_dompct").onchange = (e) => { opt.domPct = +e.target.value; applyComp(); };
+    $("sv_list").oninput = (e) => { opt.listText = e.target.value; };
+    $("sv_listgo").onclick = applyComp;
+    showComp();
+    compMessage(compSummary());
   }
 
   // ── UI ────────────────────────────────────────────────────────────────────
@@ -489,6 +621,7 @@ const StandView = (() => {
         <button id="sv_seed" title="${tx("sv_layout_tip")}">${tx("sv_layout")}</button>
         <button id="sv_cam">${tx("sv_reset")}</button>
       </div>
+      ${zg ? compUi(zg) : ""}
       <div id="sv_status" class="sv-status"></div>
       <div class="sv-note">${tx("sv_note")} ${zg ? tx("sv_note_genus", zg.trees, zg.plots, Math.round(100 * zg.drawn_by_genus)) : tx("sv_note_generic")}</div>
     </div>`);
@@ -502,14 +635,14 @@ const StandView = (() => {
     $("sv_next").onclick = () => seek(Math.floor(clock) + 1);
     $("sv_year").oninput = (e) => seek(+e.target.value);
     const on = (id, key, conv, rebuildToo) => $(id).addEventListener("change", (e) => {
-      opt[key] = conv(e.target); if (rebuildToo) rebuild(); dirty = true;
+      opt[key] = conv(e.target); if (rebuildToo) { rebuild(); if (zg) compMessage(compSummary()); } dirty = true;
     });
     on("sv_view", "view", e => e.value); on("sv_area", "areaHa", e => +e.value, true); on("sv_speed", "speed", e => +e.value);
-    if (zg) on("sv_shapes", "shapes", e => e.value);
+    if (zg) { on("sv_shapes", "shapes", e => e.value); $("sv_shapes").addEventListener("change", showComp); wireComp(); }
     on("sv_gifw", "gifw", e => +e.value); on("sv_gifn", "gifn", e => +e.value);
     on("sv_vidw", "vidw", e => +e.value);
     on("sv_loop", "loop", e => e.checked); on("sv_snags", "snags", e => e.checked); on("sv_stumps", "stumps", e => e.checked);
-    $("sv_seed").onclick = () => { opt.seed = 1 + Math.floor(Math.random() * 1e9); rebuild(); };
+    $("sv_seed").onclick = () => { opt.seed = 1 + Math.floor(Math.random() * 1e9); rebuild(); if (zg) compMessage(compSummary()); };
     $("sv_cam").onclick = () => { opt.az = defaults.az; opt.pitch = defaults.pitch; opt.zoom = 1; dirty = true; };
     $("sv_png").onclick = exportPng;
     $("sv_gif").onclick = exportGif;
@@ -546,7 +679,8 @@ const StandView = (() => {
   function rebuild() {
     stand = StandModel.buildStand(sim, { areaHa: opt.areaHa, seed: opt.seed, crown: zone.classes.map(c => c.crown_m) });
     const zg = genera && genera.zones[zoneKey];
-    if (zg) StandModel.assignGenera(stand, zg.mix, genera.cap, opt.seed);
+    if (zg && opt.comp) StandModel.assignComposition(stand, zg.mix, genera.cap, opt.seed, opt.comp);
+    else if (zg) StandModel.assignGenera(stand, zg.mix, genera.cap, opt.seed);
     dirty = true;
   }
 
@@ -663,7 +797,7 @@ const StandView = (() => {
     if (busy) { if (opt.exporting === id) cancelled = true; return; }
     setPlaying(false);
     busy = true; cancelled = false; opt.exporting = id;
-    const btn = $(id), controls = [...document.querySelectorAll("#sub-stand button, #sub-stand select, #sub-stand input")].filter(e => e !== btn);
+    const btn = $(id), controls = [...document.querySelectorAll("#sub-stand button, #sub-stand select, #sub-stand input, #sub-stand textarea")].filter(e => e !== btn);
     controls.forEach(e => { e.disabled = true; });
     const token = loadToken;
     status("");
@@ -713,6 +847,7 @@ const StandView = (() => {
       if (gd && gd.zones[key]) {
         const used = new Set(gd.zones[key].mix.flatMap(x => Object.keys(x)).filter(n => n !== "Other").map(n => formName(gd, key, n)));
         for (const n of used) files.push(...gd.forms[n].sizes.map(x => x.file));
+        files.push(...compFiles(gd, key, opt.comp));
       }
       await Promise.all(files.map(loadImage));
       if (token !== loadToken) return;         // a newer run replaced this one

@@ -251,6 +251,7 @@ dome = lambda y: math.sqrt(max(0, 1 - ((y - .58) / .6) ** 2))
 oval = lambda y: .86 * math.sqrt(max(0, 1 - ((y - .52) / .54) ** 2))
 umb = lambda y: (min(1, .55 + y * 2.4) if y < .36 else max(.0, 1 - (y - .36) * 1.45))
 flat = lambda y: (min(1, .72 + y * 1.6) if y < .5 else max(0, 1 - (y - .5) * 1.9))
+spire = lambda y: .12 + .80 * y if y < .88 else .66
 cone = lambda y: .16 + .84 * y ** .8 if y < .9 else .7
 column = lambda y: .62 * math.sin(math.pi * min(1, .10 + y * .86)) ** .6
 vase = lambda y: max(.12, 1 - y * .85)
@@ -288,6 +289,8 @@ SHAPES = {
     "Alnus": B("SA_16", .9, .66, oval, MID, PALE, k=56, rr=.115, bow=.015),
     "Myrcianthes": B("SA_16", 1.25, .56, flat, DEEP, RED, k=46, rr=.095, squash=.55, stems=2, bow=.05, limbs=24),
     "Polylepis": B("SA_16", 1.25, .62, flat, SILVER, RED, k=34, rr=.10, squash=.5, stems=3, bow=.10, forkf=.62, limbs=24, leaf=1.1, limbw=.5),
+    "Eucalyptus": B("SA_16", .86, .52, column, GUM, PALE, k=78, rr=.135, squash=.66, dens=4, bow=.012, forkf=.42, limbs=9, leaf=1.25, limbw=.34),
+    "Pinus": B("SA_16", .95, .72, spire, BLUE, BROWN, k=92, rr=.10, squash=.42, tiers=9, dens=4.2, leaf=1.1, bow=.004, forkf=.95),
     "Bursera": B("SA_13", 1.15, .60, flat, DRY, GREY, k=26, rr=.10, squash=.5, dens=2.2, bow=.08, forkf=.95, limbs=26, limbw=.5),
     "Eriotheca": B("SA_13", 1.2, .50, umb, DRYG, GREY, k=32, rr=.085, squash=.5, dens=2.6, bow=.03, forkf=1.0, limbs=26, limbw=.55, swell=1.5),
     "Prosopis": B("SA_13", 1.55, .70, flat, DRYG, DARKB, k=50, rr=.085, squash=.55, dens=2.6, bow=.12, forkf=.8, limbs=30, limbw=.5, stems=2, leaf=1.2),
@@ -336,6 +339,8 @@ def main():
             sizes.append({"file": f"genus/{name}", "w": im.width, "h": im.height, "ax": ax, "ay": ay,
                           "ppm": PPM, "height_m": H, "crown_m": round(cw, 2)})
         forms[form] = {"cap": d["cap"], "palm": SHAPES[form]["kind"] == "P", "sizes": sizes, "height_m": d["height_m"]}
+        if not d.get("measured", True):           # too few trees: heights are the zone curve
+            forms[form]["few"] = d["trees"]
     out = {"forms": forms, "genus_form": data["genus_form"], "zone_form": data["zone_form"], "cap": data["cap"],
            "zones": {z: {k: v[k] for k in ("trees", "plots", "genera", "height_m", "mix", "drawn_by_genus")} for z, v in data["zones"].items()}}
     (OUT.parent / "genus.json").write_text(json.dumps(out, separators=(",", ":")))

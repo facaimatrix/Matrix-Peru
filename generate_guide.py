@@ -325,6 +325,7 @@ pdf.table(
         ["Vista", "Perspectiva (arrastre para girar, rueda para acercar), Perfil (franja por el centro de la parcela) o Planta (copas desde arriba)."],
         ["Parcela", "1 ha (100 × 100 m) o ¼ ha (50 × 50 m)."],
         ["Formas", "Por género, o formas genéricas."],
+        ["Composición", "Mezcla de la ecozona; un género dominante con su porcentaje (100 % = monocultivo); o una lista propia de géneros y porcentajes. Solo cambia el dibujo."],
         ["Velocidad", "Años simulados por segundo; también define la duración del GIF y del video."],
         ["Muertos en pie / Tocones", "Muestra los árboles muertos por 4 años y los tocones por 8 años, desvaneciéndose."],
         ["Nueva distribución", "Cambia al azar las posiciones y los géneros de los árboles."],
@@ -358,7 +359,7 @@ pdf.bullet("Tomado del inventario",
 pdf.bullet("Ilustrativo",
            "Las posiciones, las formas y anchos de copa, y el género de cada árbol.")
 pdf.note(
-    "El modelo no simula especies. A cada árbol se le asigna un género según su frecuencia observada por zona ecológica y "
+    "El modelo no simula especies. Salvo que se indique una composición, a cada árbol se le asigna un género según su frecuencia observada por zona ecológica y "
     "clase de DAP; esa mezcla no responde a la cosecha ni al tiempo. Los géneros poco comunes y los árboles no identificados "
     "se dibujan con formas genéricas. No use la animación para sacar conclusiones sobre composición florística."
 )

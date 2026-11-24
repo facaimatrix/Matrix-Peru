@@ -130,6 +130,11 @@ perspective, profile and overhead views, and exports an animated GIF, an MP4 vid
   plot area)`, exactly, every year) and the recruitment, upgrowth, mortality and
   harvest events. `simulation.rs` returns those flows as `rec_vec`, `up_mat`,
   `mort_mat`; computing them does not change the simulation.
+- **Composition:** the Composition control replaces the ecozone mix with one
+  dominant genus and its percentage, or a pasted genus list. Picture only: the
+  rates do not use species. Year-0 trees and recruits have the given shares to
+  the nearest tree (`assignComposition`). *Eucalyptus* and *Pinus* are never in
+  the mix and only appear this way.
 - **Genera:** the model does not simulate species. Each tree gets a genus for
   life from the inventory's shares by ecozone and DBH class, limited to genera
   that reach the size that tree grows to. Shapes group genera that look alike

@@ -14,7 +14,8 @@ Rules
 - Zone: Costa (CO) plots -> SA_13 (dry forest). Every other plot -> the GEC of
   the nearest perudata.csv point, the same rule the app uses, if it is within
   MAX_KM; otherwise the plot is dropped.
-- Planted genera in DROP are left out.
+- Planted genera (PLANTED) are left out of the mix, the height curves and the
+  tree counts. They only get a shape, for compositions the user sets.
 - Shares are by zone and DBH class; a class with fewer than MIN_N trees borrows
   from its neighbours. Genera without a shape in FORMS go to "Other".
 - Heights are medians of the recorded heights (possibly visual estimates
@@ -35,7 +36,8 @@ D = np.array([12.93003, 17.28223, 22.25088, 27.31658, 32.29727, 37.24331, 42.305
 ZONES = ["SA_11", "SA_13", "SA_16"]
 MAX_KM = 10
 MIN_N = {"SA_11": 300, "SA_13": 60, "SA_16": 200}
-DROP = {"Eucalyptus", "Pinus"}
+PLANTED = ["Eucalyptus", "Pinus"]
+MIN_PLANTED = 25           # fewer measured trees than this: use the zone height curve
 
 # Shape -> genera drawn with it. Grouped by overall look, not by taxonomy.
 FORMS = {
@@ -70,7 +72,7 @@ FORMS = {
     "Caesalpinia": "Caesalpinia Libidibia",
     "Loxopterygium": "Loxopterygium Handroanthus Myroxylon Erythrina Gallesia",
 }
-FORM_OF = {g: f for f, gs in FORMS.items() for g in gs.split()}
+FORM_OF = {g: f for f, gs in FORMS.items() for g in gs.split()} | {g: g for g in PLANTED}
 # Genera that look different outside the dry forest.
 ZONE_FORM = {z: {"Cordia": "Protium", "Coccoloba": "Protium", "Simira": "Protium", "Myroxylon": "Sloanea", "Albizia": "Sloanea",
                  "Erythrina": "Sloanea", "Handroanthus": "Protium", "Cynophalla": "Protium"} for z in ("SA_11", "SA_16")}
@@ -91,7 +93,7 @@ def load(path):
     x = x.join(plots[["km", "gec"]], on="PlotID")
     x["genus"] = x.Species.str.strip().str.split().str[0].str.capitalize()
     x = x.sort_values(["DBH", "TreeID"], ascending=[False, True]).drop_duplicates(["PlotID", "subplot_register_unit_id", "tree_num"])
-    x = x[(x.DBH >= 10) & x.Habito.isin(["Arbol", "Palmera", "Arbusto"]) & ~x.genus.isin(DROP)].copy()
+    x = x[(x.DBH >= 10) & x.Habito.isin(["Arbol", "Palmera", "Arbusto"])].copy()
     x["cls"] = np.minimum(((x.DBH - 10) // 5).astype(int), 12)
     x["zone"] = np.where(x.Ecozona == "CO", "SA_13", np.where(x.km <= MAX_KM, x.gec, None))
     x = x[x.zone.isin(ZONES)].copy()
@@ -101,6 +103,8 @@ def load(path):
 
 def main():
     x = load(sys.argv[1])
+    planted = x[x.genus.isin(PLANTED)].copy()
+    x = x[~x.genus.isin(PLANTED)].copy()
     out = {"zones": {}, "forms": {}, "genus_form": FORM_OF, "zone_form": ZONE_FORM}
     fit, ratio = {}, {}
     for z in ZONES:
@@ -152,6 +156,19 @@ def main():
             top = float(r.Altura_total.quantile(.97))       # no extrapolating past what was measured
             h[z] = [round(float(v), 2) for v in np.minimum(np.maximum.accumulate(hs), top)]
         out["forms"][f] = {"trees": int(len(s)), "cap": max(cap[g] for g in s.genus.unique()), "height_m": h}
+    planted["ratio"] = planted.Altura_total / [weibull(d, *fit[z]) for d, z in zip(planted.DBH.clip(upper=100), planted.zone)]
+    for f in PLANTED:
+        s = planted[(planted.genus == f) & (planted.Altura_total > 1.3)]
+        ok, h = len(s) >= MIN_PLANTED, {}
+        for z in ZONES:
+            hs = []
+            for c in range(13):
+                m = s[(s.zone == z) & (s.cls == c)].Altura_total
+                hs.append(float(m.median()) if ok and len(m) >= 20 else (float(s.ratio.median()) if ok else 1) * float(weibull(D[c], *fit[z])))
+            hs = np.maximum.accumulate(hs)
+            h[z] = [round(float(v), 2) for v in (np.minimum(hs, s.Altura_total.quantile(.97)) if ok else hs)]
+        cap[f] = 12
+        out["forms"][f] = {"trees": int(len(s)), "cap": 12, "height_m": h, "measured": ok}
     out["cap"] = cap
     (ROOT / "tools/genus_data.json").write_text(json.dumps(out, indent=1))
     for z in ZONES:

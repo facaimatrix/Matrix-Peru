@@ -146,13 +146,54 @@ const StandModel = (() => {
   // genera that reach the largest class this tree grows to.
   function assignGenera(stand, mix, cap, seed) {
     const R = rng((seed ^ 0x5bd1e995) >>> 0);
+    for (const t of stand.trees) t.genus = fromMix(R, t, mix, cap);
+  }
+  const topClass = (t) => t.hist[t.hist.length - 1][1];
+  function fromMix(R, t, mix, cap, skip) {
+    const top = topClass(t), r = R();
+    const opts = Object.entries(mix[t.hist[0][1]]).filter(([g]) => g === "Other" || (cap[g] >= top && !(skip && skip.has(g))));
+    let left = r * opts.reduce((a, [, w]) => a + w, 0);
+    for (const [g, w] of opts) { left -= w; if (left <= 0) return g; }
+    return "Other";
+  }
+
+  // Same, with a composition set by the user: comp = [{genus, pct}], percent of
+  // trees; what is left of 100 follows the mix, without the listed genera. The
+  // trees of year 0, and all trees ever recruited, have these shares to the
+  // nearest tree. Trees too large for a genus go to another one when possible.
+  function assignComposition(stand, mix, cap, seed, comp) {
+    const R = rng((seed ^ 0x5bd1e995) >>> 0), skip = new Set(comp.map(e => e.genus));
+    const share = comp.map(e => e.pct / 100);
+    const rest = share.length;
+    share.push(Math.max(0, 1 - share.reduce((a, b) => a + b, 0)));
+    if (share[rest] < 1e-6) share[rest] = 0;
+    const fits = (i, top) => i === rest || !(cap[comp[i].genus] < top);
+    const groups = new Map();
     for (const t of stand.trees) {
-      const c0 = t.hist[0][1], top = t.hist[t.hist.length - 1][1], r = R();
-      const opts = Object.entries(mix[c0]).filter(([g]) => g === "Other" || cap[g] >= top);
-      const sum = opts.reduce((a, [, w]) => a + w, 0);
-      let left = r * sum;
-      t.genus = "Other";
-      for (const [g, w] of opts) { left -= w; if (left <= 0) { t.genus = g; break; } }
+      if (!groups.has(t.born)) groups.set(t.born, []);
+      groups.get(t.born).push(t);
+    }
+    const done = share.map(() => 0);
+    let seen = 0;
+    for (const year of [...groups.keys()].sort((a, b) => a - b)) {
+      const g = groups.get(year).sort((a, b) => topClass(b) - topClass(a) || a.id - b.id);
+      seen += g.length;
+      const want = share.map((s, i) => s * seen - done[i]);
+      const q = want.map(v => Math.max(0, Math.floor(v + 1e-9)));
+      const all = q.map((_, i) => i).filter(i => share[i] > 0);
+      for (let n = q.reduce((a, b) => a + b, 0); n !== g.length; n += Math.sign(g.length - n)) {
+        const s = Math.sign(g.length - n);
+        const i = all.filter(j => s > 0 || q[j] > 0).reduce((a, b) => s * (want[b] - q[b]) > s * (want[a] - q[a]) ? b : a);
+        q[i] += s;
+      }
+      for (const t of g) {
+        const open = all.filter(i => q[i] > 0), ok = open.filter(i => fits(i, topClass(t)));
+        const pool = ok.length ? ok : open;
+        let left = R() * pool.reduce((a, i) => a + q[i], 0), pick = pool[pool.length - 1];
+        for (const i of pool) { left -= q[i]; if (left < 0) { pick = i; break; } }
+        q[pick]--; done[pick]++;
+        t.genus = pick === rest ? fromMix(R, t, mix, cap, skip) : comp[pick].genus;
+      }
     }
   }
 
@@ -163,5 +204,5 @@ const StandModel = (() => {
     return c;
   }
 
-  return { buildStand, assignGenera, classAt, rng, N };
+  return { buildStand, assignGenera, assignComposition, topClass, classAt, rng, N };
 })();
