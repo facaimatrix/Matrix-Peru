@@ -28,22 +28,47 @@ const StandView = (() => {
   const CLASS_COL = ["#d7f0b5", "#bfe6a2", "#a4da92", "#88cd86", "#6bbf7e", "#52b07a", "#42a37a",
     "#389474", "#2f866f", "#d1ac00", "#e08f2e", "#dd6f3c", "#d14f45"];
 
-  let manifest = null, manifestP = null;
+  let manifest = null, manifestP = null, genera = null;
   let sim = null, stand = null, zone = null, zoneKey = null, loadToken = 0;
   let clock = 0, playing = false, hold = 0, raf = 0, lastTs = 0, busy = false, loading = false, relabelLater = false;
   let dirty = true;
   const defaults = { areaHa: 1, seed: 1, view: "persp", speed: 2, loop: true, snags: true, stumps: true,
-    az: 0.5, pitch: 0.21, zoom: 1, gifw: 1000, gifn: 120 };
+    az: 0.5, pitch: 0.21, zoom: 1, gifw: 1000, gifn: 120, vidw: 1920, shapes: "genus" };
   const opt = { ...defaults };
   const images = new Map(), derived = new Map();
 
   // ── Sprites ───────────────────────────────────────────────────────────────
+  // manifest.json: the generic shapes. genus.json: genus shapes, the genus mix
+  // and measured heights by zone; without it only generic shapes are offered.
   function getManifest() {
-    return manifestP || (manifestP = fetch(ASSETS + "manifest.json").then(r => {
-      if (!r.ok) throw new Error(tx("sv_err_manifest"));
-      return r.json();
-    }).catch(e => { manifestP = null; throw e; }));
+    return manifestP || (manifestP = Promise.all([
+      fetch(ASSETS + "manifest.json").then(r => {
+        if (!r.ok) throw new Error(tx("sv_err_manifest"));
+        return r.json();
+      }),
+      fetch(ASSETS + "genus.json").then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).catch(e => { manifestP = null; throw e; }));
   }
+  const formName = (data, key, genus) => ((data.zone_form || {})[key] || {})[genus] || data.genus_form[genus];
+  // Sprite, height (m) and vertical stretch for a tree in DBH class c.
+  function lookOf(tr, c) {
+    const zg = genera && genera.zones[zoneKey];
+    if (zg && opt.shapes === "genus" && tr.genus && tr.genus !== "Other") {
+      const f = genera.forms[formName(genera, zoneKey, tr.genus)];
+      if (f) {
+        const i = Math.min(c, f.cap), rec = f.sizes[i], h = f.height_m[zoneKey][i];
+        return { rec, h, vy: h / rec.height_m, palm: f.palm };
+      }
+    }
+    const rec = zone.classes[c].trees[tr.shape], vy = stretch(c);
+    return { rec, h: rec.height_m * vy, vy };
+  }
+  // Generic sprites were drawn to assumed heights; stretch them to measured ones.
+  function stretch(c) {
+    const zg = genera && genera.zones[zoneKey];
+    return zg ? zg.height_m[c] / zone.classes[c].height_m : 1;
+  }
+  const topHeight = () => zone.classes[12].height_m * stretch(12) * (genera ? 1.15 : 1);
   function loadImage(file) {
     if (images.has(file)) return Promise.resolve();
     return new Promise((res, rej) => {
@@ -108,9 +133,10 @@ const StandView = (() => {
         continue;
       }
       const c1 = StandModel.classAt(tr, y1), c0 = tr.born <= y0 ? StandModel.classAt(tr, y0) : c1;
-      const h0 = tr.born <= y0 ? zone.classes[c0].height_m : 0;
-      const size = (h0 + (zone.classes[c1].height_m - h0) * grow) / zone.classes[c1].height_m;
-      const o = { tr, kind: "tree", c: c1, size, alpha: 1 };
+      const look = lookOf(tr, c1), h1 = look.h;
+      const h0 = tr.born <= y0 ? (c0 === c1 ? h1 : lookOf(tr, c0).h) : 0;
+      const size = (h0 + (h1 - h0) * grow) / h1;
+      const o = { tr, kind: "tree", c: c1, size, alpha: 1, look };
       if (tr.end === y1 && fr > 0) {
         if (tr.fate === "dead") { o.dying = grow; } else { o.fell = fell; }
       }
@@ -121,7 +147,7 @@ const StandView = (() => {
 
   // ── Perspective scene ─────────────────────────────────────────────────────
   function camera() {
-    const S = stand.side, f = 720, D = Math.max(S * 1.42, 98) / opt.zoom, hTop = zone.classes[12].height_m;
+    const S = stand.side, f = 720, D = Math.max(S * 1.42, 98) / opt.zoom, hTop = topHeight();
     const ca = Math.cos(opt.az), sa = Math.sin(opt.az), cp = Math.cos(opt.pitch), sp = Math.sin(opt.pitch);
     const h0 = hTop * 0.36, cx = SW / 2, cy = H * 0.54;
     return {
@@ -199,20 +225,20 @@ const StandView = (() => {
       return;
     }
     if (o.kind === "snag") {
-      put(g, cl.snag, sx, sy, k, { alpha: o.alpha, flip: tr.flip, vs, fog });
+      put(g, cl.snag, sx, sy, k, { alpha: o.alpha, flip: tr.flip, vs: vs * stretch(o.c), fog });
       return;
     }
-    const rec = cl.trees[tr.shape];
+    const { rec, vy } = o.look;
     if (o.dying !== undefined) {
-      put(g, cl.snag, sx, sy, k, { alpha: o.dying, flip: tr.flip, vs, fog });
-      put(g, rec, sx, sy, k * o.size, { alpha: 1 - o.dying, flip: tr.flip, vs, fog });
+      put(g, cl.snag, sx, sy, k, { alpha: o.dying, flip: tr.flip, vs: vs * stretch(o.c), fog });
+      put(g, rec, sx, sy, k * o.size, { alpha: 1 - o.dying, flip: tr.flip, vs: vs * vy, fog });
     } else if (o.fell > 0) {
       const drop = clamp01(o.fell / 0.75);
       if (opt.stumps) drawTree(g, { tr, kind: "stump", c: o.c, alpha: 1 }, sx, sy, s, vs, fog);
-      put(g, rec, sx, sy, k * o.size, { alpha: 1 - clamp01((o.fell - 0.7) / 0.3), flip: tr.flip, vs, fog,
+      put(g, rec, sx, sy, k * o.size, { alpha: 1 - clamp01((o.fell - 0.7) / 0.3), flip: tr.flip, vs: vs * vy, fog,
         rot: tr.fall * 1.5 * drop * drop });
     } else {
-      put(g, rec, sx, sy, k * o.size, { flip: tr.flip, vs, fog });
+      put(g, rec, sx, sy, k * o.size, { flip: tr.flip, vs: vs * vy, fog });
     }
   }
 
@@ -234,7 +260,7 @@ const StandView = (() => {
     // shadows first so they never cover a stem
     g.fillStyle = "rgba(20,28,12,0.17)";
     for (const { o, p } of items) if (o.kind === "tree") {
-      const r = zone.classes[o.c].crown_m / 2 * o.size * p.s * (1 - (o.fell || 0));
+      const r = o.look.rec.crown_m / 2 * o.size * p.s * (1 - (o.fell || 0));
       g.beginPath(); g.ellipse(p.x + r * 0.3, p.y, r, r * (0.12 + cam.sp * 0.7), 0, 0, 7); g.fill();
     }
     for (const [x, y] of corners) items.push({ pole: [x, y], p: cam.project(x, y) });
@@ -249,12 +275,12 @@ const StandView = (() => {
 
   // ── Profile: side view of a strip through the plot ────────────────────────
   function drawProfile(g, time) {
-    const base = H - 74, s = Math.min((SW - 90) / stand.side, (H - 150) / (zone.classes[12].height_m * 1.12));
+    const base = H - 74, s = Math.min((SW - 90) / stand.side, (H - 150) / (topHeight() * 1.12));
     const x0 = SW / 2 - s * stand.side / 2, depth = stand.side / 5;
     backdrop(g, base - 40);
     g.fillStyle = LOOK[zoneKey].ground; g.fillRect(0, base - 12, SW, H);
     g.font = "11px Segoe UI, sans-serif"; g.lineWidth = 1;
-    for (let h = 0; h <= zone.classes[12].height_m + 5; h += 5) {
+    for (let h = 0; h <= topHeight() + 3; h += 5) {
       g.strokeStyle = "rgba(13,33,55,0.16)"; g.beginPath(); g.moveTo(x0 - 8, base - h * s); g.lineTo(x0 + s * stand.side + 8, base - h * s); g.stroke();
       g.fillStyle = "#0d2137"; g.textAlign = "right"; g.fillText(h + " m", x0 - 12, base - h * s + 4);
     }
@@ -276,7 +302,7 @@ const StandView = (() => {
         g.beginPath(); g.arc(x, y, small ? 1.3 : 3, 0, 7); g.fill(); g.globalAlpha = 1;
         continue;
       }
-      const r = Math.max(1, zone.classes[o.c].crown_m / 2 * o.tr.vig * o.size * s);
+      const r = Math.max(1, o.look.rec.crown_m / 2 * o.tr.vig * o.size * s);
       g.globalAlpha = 0.86 * (1 - (o.fell || 0)) * (1 - 0.8 * (o.dying || 0));
       if (small) g.fillStyle = CLASS_COL[o.c];
       else {
@@ -286,8 +312,9 @@ const StandView = (() => {
       }
       g.beginPath();
       if (small) g.arc(x, y, r, 0, 7);
-      else for (let k = 0; k <= 20; k++) {
-        const a = k / 20 * 2 * Math.PI, q = r * (1 + 0.07 * Math.sin(5 * a + o.tr.id) + 0.04 * Math.sin(9 * a + o.tr.id * 2));
+      else for (let k = 0, n = o.look.palm ? 54 : 20; k <= n; k++) {
+        const a = k / n * 2 * Math.PI, q = r * (o.look.palm ? 0.42 + 0.58 * Math.abs(Math.cos(4.5 * a + o.tr.id))
+          : 1 + 0.07 * Math.sin(5 * a + o.tr.id) + 0.04 * Math.sin(9 * a + o.tr.id * 2));
         g.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q);
       }
       g.fill();
@@ -393,7 +420,7 @@ const StandView = (() => {
     g.font = "10px Segoe UI, sans-serif"; g.fillStyle = C.faint; g.textAlign = "right";
     g.fillText(series.maxBa.toFixed(0), gx + gw - 3, my + 10); g.fillText("0", gx + gw - 3, my + ms - 3);
     g.textAlign = "left";
-    g.fillText(tx("sv_illustrative"), x, H - 10);
+    g.fillText(tx(genera && genera.zones[zoneKey] ? "sv_illustrative_genus" : "sv_illustrative"), x, H - 10);
   }
   function zoneLabel() {
     return (tx("sv_zones")[zoneKey] || zone.name) + (zoneKey === sim.gec ? "" : tx("sv_sprites_for", zoneKey));
@@ -430,13 +457,15 @@ const StandView = (() => {
   function buildUi() {
     const sel = (id, label, opts, val) => `<label class="sv-opt">${label}<select id="${id}">` +
       opts.map(([v, n]) => `<option value="${v}"${String(v) === String(val) ? " selected" : ""}>${n}</option>`).join("") + `</select></label>`;
+    const zg = genera && genera.zones[zoneKey];
     const chk = (id, label, on) => `<label class="sv-chk"><input type="checkbox" id="${id}" ${on ? "checked" : ""}> ${label}</label>`;
     message(`
     <div class="card card-accent-green">
       <div class="sec-hdr"><span class="hdr-icon">🎬</span> ${tx("sv_title")}
         <span class="sv-actions">
           <button class="btn-dl" id="sv_png">${tx("sv_png")}</button>
-          <button class="btn-dl" id="sv_gif">${tx("sv_gif")}</button></span></div>
+          <button class="btn-dl" id="sv_gif">${tx("sv_gif")}</button>
+          <button class="btn-dl" id="sv_mp4">${tx("sv_mp4")}</button></span></div>
       <canvas id="sv_canvas" tabindex="0" aria-label="${tx("sv_aria")}"></canvas>
       <div class="sv-bar">
         <button id="sv_first" title="${tx("sv_first")}">⏮</button>
@@ -449,9 +478,11 @@ const StandView = (() => {
       <div class="sv-bar">
         ${sel("sv_view", tx("sv_view"), [["persp", tx("sv_persp")], ["profile", tx("sv_profile")], ["overhead", tx("sv_overhead")]], opt.view)}
         ${sel("sv_area", tx("sv_plot"), [[1, "1 ha (100 × 100 m)"], [0.25, "¼ ha (50 × 50 m)"]], opt.areaHa)}
+        ${zg ? sel("sv_shapes", tx("sv_shapes"), [["genus", tx("sv_by_genus")], ["generic", tx("sv_generic")]], opt.shapes) : ""}
         ${sel("sv_speed", tx("sv_speed"), [0.5, 1, 2, 5, 10].map(s => [s, tx("sv_rate", s)]), opt.speed)}
         ${sel("sv_gifw", tx("sv_gifw"), [800, 1000, 1200].map(n => [n, n + " px"]), opt.gifw)}
         ${sel("sv_gifn", tx("sv_gifn"), [[60, tx("sv_upto", 60)], [120, tx("sv_upto", 120)], [600, tx("sv_every")]], opt.gifn)}
+        ${sel("sv_vidw", tx("sv_vidw"), [[1200, "1200 × 640"], [1920, "1920 × 1024"]], opt.vidw)}
         ${chk("sv_loop", tx("sv_loop"), opt.loop)}
         ${chk("sv_snags", tx("sv_snags"), opt.snags)}
         ${chk("sv_stumps", tx("sv_stumps"), opt.stumps)}
@@ -459,7 +490,7 @@ const StandView = (() => {
         <button id="sv_cam">${tx("sv_reset")}</button>
       </div>
       <div id="sv_status" class="sv-status"></div>
-      <div class="sv-note">${tx("sv_note")}</div>
+      <div class="sv-note">${tx("sv_note")} ${zg ? tx("sv_note_genus", zg.trees, zg.plots, Math.round(100 * zg.drawn_by_genus)) : tx("sv_note_generic")}</div>
     </div>`);
 
     const cv = $("sv_canvas");
@@ -474,12 +505,15 @@ const StandView = (() => {
       opt[key] = conv(e.target); if (rebuildToo) rebuild(); dirty = true;
     });
     on("sv_view", "view", e => e.value); on("sv_area", "areaHa", e => +e.value, true); on("sv_speed", "speed", e => +e.value);
+    if (zg) on("sv_shapes", "shapes", e => e.value);
     on("sv_gifw", "gifw", e => +e.value); on("sv_gifn", "gifn", e => +e.value);
+    on("sv_vidw", "vidw", e => +e.value);
     on("sv_loop", "loop", e => e.checked); on("sv_snags", "snags", e => e.checked); on("sv_stumps", "stumps", e => e.checked);
     $("sv_seed").onclick = () => { opt.seed = 1 + Math.floor(Math.random() * 1e9); rebuild(); };
     $("sv_cam").onclick = () => { opt.az = defaults.az; opt.pitch = defaults.pitch; opt.zoom = 1; dirty = true; };
     $("sv_png").onclick = exportPng;
     $("sv_gif").onclick = exportGif;
+    $("sv_mp4").onclick = exportVideo;
 
     let drag = null;
     cv.onpointerdown = (e) => { if (opt.view !== "persp" || busy) return; drag = [e.clientX, e.clientY, opt.az, opt.pitch]; cv.setPointerCapture(e.pointerId); };
@@ -511,6 +545,8 @@ const StandView = (() => {
   function seek(y) { if (busy) return; setPlaying(false); clock = Math.max(0, Math.min(sim.sim_l, y)); dirty = true; }
   function rebuild() {
     stand = StandModel.buildStand(sim, { areaHa: opt.areaHa, seed: opt.seed, crown: zone.classes.map(c => c.crown_m) });
+    const zg = genera && genera.zones[zoneKey];
+    if (zg) StandModel.assignGenera(stand, zg.mix, genera.cap, opt.seed);
     dirty = true;
   }
 
@@ -591,30 +627,76 @@ const StandView = (() => {
     return { bytes: enc.finish(), frames: years.length };
   }
 
-  async function exportGif() {
-    if (busy) return;
+  // ── Video ─────────────────────────────────────────────────────────────────
+  // Every frame is drawn in turn (not recorded from the screen), so the result
+  // does not depend on how fast this computer is.
+  const FPS = 30, VIDEO_MAX_S = 180, HOLD_START = 1, HOLD_END = 2;
+  // Years per second: the chosen speed, raised only if the video would be too long.
+  function videoPlan() {
+    const speed = Math.max(opt.speed, sim.sim_l / (VIDEO_MAX_S - HOLD_START - HOLD_END));
+    const run = Math.ceil(sim.sim_l / speed * FPS);
+    return { speed, run, frames: HOLD_START * FPS + run + HOLD_END * FPS, faster: speed > opt.speed };
+  }
+  const pause = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = r; c.port2.postMessage(0); });
+
+  async function makeVideo(width, onProgress) {
+    const k = width / W, w = width, h = Math.round(H * k), plan = videoPlan();
+    const enc = await Mp4Encoder.create(w, h, FPS, width > 1400 ? 10e6 : 5e6);
+    if (!enc) throw new Error(tx("sv_err_video"));
+    try {
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      const g = c.getContext("2d");
+      for (let i = 0; i < plan.frames; i++) {
+        const j = Math.max(0, Math.min(plan.run, i - HOLD_START * FPS));
+        if (i === 0 || (j > 0 && i <= HOLD_START * FPS + plan.run)) draw(g, plan.run ? sim.sim_l * j / plan.run : 0, k);
+        await enc.add(c);
+        if (onProgress) onProgress(i + 1, plan.frames);
+        if (i % 2) await pause();              // keep the window responsive
+      }
+      return { bytes: await enc.finish(), frames: plan.frames, seconds: plan.frames / FPS, ...plan, codec: enc.codec };
+    } finally { enc.close(); }
+  }
+
+  // Runs one export at a time; its own button becomes "cancel" meanwhile.
+  let cancelled = false;
+  async function runExport(id, label, job) {
+    if (busy) { if (opt.exporting === id) cancelled = true; return; }
     setPlaying(false);
-    busy = true;
-    const btn = $("sv_gif"), controls = document.querySelectorAll("#sub-stand button, #sub-stand select, #sub-stand input");
+    busy = true; cancelled = false; opt.exporting = id;
+    const btn = $(id), controls = [...document.querySelectorAll("#sub-stand button, #sub-stand select, #sub-stand input")].filter(e => e !== btn);
     controls.forEach(e => { e.disabled = true; });
     const token = loadToken;
+    status("");
     try {
-      const { bytes, frames } = await makeGif(opt.gifw, opt.gifn, (i, n) => {
+      await job((i, n) => {
         if (token !== loadToken) throw new Error(tx("sv_restarted"));
-        btn.textContent = tx("sv_encoding", i, n);
-      });
-      status(tx("sv_ready", frames, mb(bytes.length)));
-      const p = await saveBinary(`${tx("sv_file_gif")}_${stamp()}.gif`, bytes, "image/gif");
-      status(p ? tx("sv_saved_gif", p, frames, mb(bytes.length)) : tx("sv_cancelled"));
+        if (cancelled) throw new Error(tx("sv_stopped"));
+        btn.textContent = tx("sv_encoding", Math.floor(100 * i / n));
+      }, () => { btn.disabled = true; });      // past the point where cancel makes sense
     } catch (e) {
-      status(tx("sv_failed", e.message || e));
+      status(cancelled ? tx("sv_stopped") : tx("sv_failed", e.message || e));
     } finally {
-      busy = false; dirty = true;
-      btn.textContent = tx("sv_gif");
+      busy = false; dirty = true; opt.exporting = null;
+      btn.textContent = tx(label); btn.disabled = false;
       controls.forEach(e => { e.disabled = false; });
       if (relabelLater) { const s = $("sv_status") ? $("sv_status").textContent : ""; relabel(); status(s); }
     }
   }
+  const exportGif = () => runExport("sv_gif", "sv_gif", async (progress, saving) => {
+    const { bytes, frames } = await makeGif(opt.gifw, opt.gifn, progress);
+    saving();
+    status(tx("sv_ready", "GIF", frames, mb(bytes.length)));
+    const p = await saveBinary(`${tx("sv_file_gif")}_${stamp()}.gif`, bytes, "image/gif");
+    status(p ? tx("sv_saved_gif", p, frames, mb(bytes.length)) : tx("sv_cancelled"));
+  });
+  const exportVideo = () => runExport("sv_mp4", "sv_mp4", async (progress, saving) => {
+    const v = await makeVideo(opt.vidw, progress);
+    saving();
+    const note = v.faster ? " " + tx("sv_faster", +v.speed.toFixed(1)) : "";
+    status(tx("sv_ready", "MP4", v.frames, mb(v.bytes.length)) + note);
+    const p = await saveBinary(`${tx("sv_file_gif")}_${stamp()}.mp4`, v.bytes, "video/mp4");
+    status(p ? tx("sv_saved_mp4", p, Math.round(v.seconds), mb(v.bytes.length)) + note : tx("sv_cancelled"));
+  });
 
   // ── Public ────────────────────────────────────────────────────────────────
   async function load(result) {
@@ -623,15 +705,19 @@ const StandView = (() => {
     playing = false; clock = 0; loading = true;
     relabel();
     try {
-      const m = await getManifest();
+      const [m, gd] = await getManifest();
       const key = m.zones[result.gec] ? result.gec : ZONE_FALLBACK[result.gec];
       if (!key) throw new Error(tx("sv_err_zone", result.gec));
       const z = m.zones[key];
       const files = z.classes.flatMap(c => [...c.trees.map(x => x.file), c.snag.file]).concat(m.stump.file);
+      if (gd && gd.zones[key]) {
+        const used = new Set(gd.zones[key].mix.flatMap(x => Object.keys(x)).filter(n => n !== "Other").map(n => formName(gd, key, n)));
+        for (const n of used) files.push(...gd.forms[n].sizes.map(x => x.file));
+      }
       await Promise.all(files.map(loadImage));
       if (token !== loadToken) return;         // a newer run replaced this one
       if (zoneKey !== key) derived.clear();
-      manifest = m; zone = z; zoneKey = key; sim = result;
+      manifest = m; genera = gd; zone = z; zoneKey = key; sim = result;
       const ba = sim.ba_mat.map((_, y) => total(sim.ba_mat, y));
       series = { ba, maxBa: Math.max(0.1, ...ba), maxClass: Math.max(1, ...sim.tph_mat.flat(), ...sim.init_v) };
       loading = false;
@@ -655,6 +741,6 @@ const StandView = (() => {
     if (loading || !stand) message(`<div class="out-empty"><p>${tx(loading ? "sv_loading" : "sv_empty")}</p></div>`);
     else { buildUi(); dirty = true; }
   }
-  return { load, clear, relabel, makeGif,
+  return { load, clear, relabel, makeGif, makeVideo,
     debug: () => ({ stand, zone, sim, opt, draw, set: (time, o) => { Object.assign(opt, o || {}); clock = time; dirty = true; } }) };
 })();

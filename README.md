@@ -112,22 +112,32 @@ The app is `target/release/matrixpro-peru.exe`. To copy it elsewhere, take
 ## Stand View (animated stand visualization)
 
 Output tab → **Stand View** (Vista del Rodal) draws the simulated stand year by year, with
-perspective, profile and overhead views, and exports an animated GIF or a PNG.
+perspective, profile and overhead views, and exports an animated GIF, an MP4 video or a PNG.
 
 | File | Role |
 |------|------|
 | `tools/generate_tree_sprites.py` | draws the sprite library (Python + Pillow; only needed to change the art) |
 | `src/assets/trees/` | 157 PNGs + `manifest.json`: 3 ecozones × 13 DBH classes × (3 crown shapes + 1 snag) + 1 stump |
+| `tools/build_genus_data.py` | summarises a tree inventory into genus shares and heights (`tools/genus_data.json`) |
+| `tools/generate_genus_sprites.py` | draws the genus shapes (`src/assets/trees/genus/`, `genus.json`) |
 | `src/stand-model.js` | turns the time series into individual, persistent trees |
 | `src/stand-view.js` | rendering, controls, export |
 | `src/gif-encoder.js` | animated GIF writer (no dependencies) |
+| `src/mp4-encoder.js` | MP4 writer; H.264 compression by the webview (WebCodecs) |
 | `T` in `src/app.js` | its Spanish and English text (`sv_*` keys) |
 
 - **What is model output:** tree counts per DBH class (drawn = `round(trees/ha ×
   plot area)`, exactly, every year) and the recruitment, upgrowth, mortality and
   harvest events. `simulation.rs` returns those flows as `rec_vec`, `up_mat`,
   `mort_mat`; computing them does not change the simulation.
-- **What is illustrative:** positions, crown shapes, crown widths and heights.
+- **Genera:** the model does not simulate species. Each tree gets a genus for
+  life from the inventory's shares by ecozone and DBH class, limited to genera
+  that reach the size that tree grows to. Shapes group genera that look alike
+  (`FORMS` in `build_genus_data.py`); the rest are drawn with generic shapes.
+  Heights are inventory medians, many of them visual estimates. Delete
+  `genus.json` to go back to generic shapes and the equation below.
+- **What is illustrative:** positions, crown shapes, crown widths and, without
+  `genus.json`, heights.
   `perudata.csv` has no species (`FT` is 999 everywhere), so ecozone (`GEC`) is
   the only tree class. Heights use the W. Amazonia Weibull of Feldpausch et al.
   (2012, Biogeosciences 9:3381–3403, Table 3); `HEIGHT_SCALE` (SA_13, SA_16) and

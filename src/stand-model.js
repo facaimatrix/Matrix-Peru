@@ -140,6 +140,22 @@ const StandModel = (() => {
     return { trees, side, areaHa, events, years: sim.sim_l };
   }
 
+  // Give every tree a genus for life, from observed shares by DBH class.
+  // mix[c]: {genus: share}, cap: {genus: largest class it is drawn in}. The
+  // share used is the one for the class in which the tree first appears, among
+  // genera that reach the largest class this tree grows to.
+  function assignGenera(stand, mix, cap, seed) {
+    const R = rng((seed ^ 0x5bd1e995) >>> 0);
+    for (const t of stand.trees) {
+      const c0 = t.hist[0][1], top = t.hist[t.hist.length - 1][1], r = R();
+      const opts = Object.entries(mix[c0]).filter(([g]) => g === "Other" || cap[g] >= top);
+      const sum = opts.reduce((a, [, w]) => a + w, 0);
+      let left = r * sum;
+      t.genus = "Other";
+      for (const [g, w] of opts) { left -= w; if (left <= 0) { t.genus = g; break; } }
+    }
+  }
+
   // DBH class a tree is in at the end of `year` (assumes born <= year).
   function classAt(t, year) {
     let c = t.hist[0][1];
@@ -147,5 +163,5 @@ const StandModel = (() => {
     return c;
   }
 
-  return { buildStand, classAt, rng, N };
+  return { buildStand, assignGenera, classAt, rng, N };
 })();
